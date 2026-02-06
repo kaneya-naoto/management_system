@@ -1,0 +1,22 @@
+テスト店舗　LINE
+
+Channel ID
+2008984160
+
+Channel secret
+d9f87d3a2eaf66fb87e41d3da457202c
+
+チャネルアクセストークン
+7rQNJiwmIEYWoP8A6rIzWyo/MnoO/8CUU9h4as8WUE84amY2fLeAqMq/WLkJKrYpmctzJPM+B1N6rSYrHTQWGLP104I1WNghzyBqtLQmq//tVvS/HGIAUKpKvGWuRoN01KJT1heEhR/87TSCszFfKgdB04t89/1O/w1cDnyilFU=
+
+
+掃除者用LINE
+
+Channel ID
+2008984157
+
+Channel secret
+8b21209067e8ae4b5496b26683a22c60
+
+チャネルアクセストークン
+ShvSi0SlFOyyl/nh1Stk2LGpXm47KJ7p5T/mgD3BtCr4HBVLwesKWPBWjGTkamI41QKYUaR+xaaggYSrGS43jDcmvaqey7LP/YfMxvwEfTNeAFrUH2rzq4KbiCDP93pX8raDVOZcvtObBrS8VAh0dgdB04t89/1O/w1cDnyilFU=

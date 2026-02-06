@@ -41,3 +41,8 @@ dist/
 build/
 *.min.js
 *.min.css
+
+# Sensitive files
+ssh_db情報.txt
+*_credentials*
+*_secret*

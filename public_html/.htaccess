@@ -1,0 +1,40 @@
+# URL書き換え
+RewriteEngine On
+
+# HTTPSリダイレクト
+RewriteCond %{HTTPS} off
+RewriteCond %{HTTP_HOST} !^localhost [NC]
+RewriteCond %{HTTP_HOST} !^127\.0\.0\.1 [NC]
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+# 存在するファイル/ディレクトリはそのまま
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# それ以外は index.php へ
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+# セキュリティヘッダー
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://static.line-scdn.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; img-src 'self' data: https://profile.line-scdn.net; connect-src 'self' https://api.line.me https://liff.line.me; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+</IfModule>
+
+# includes ディレクトリへの直接アクセス禁止
+<IfModule mod_rewrite.c>
+    RewriteRule ^includes/ - [F,L]
+</IfModule>
+
+# ログファイル・環境設定ファイルへの直接アクセス禁止
+<FilesMatch "\.(log|env|env\..*|sql|bak|swp|orig|dist)$">
+    Require all denied
+</FilesMatch>
+
+# PHP設定
+<IfModule mod_php.c>
+    php_value upload_max_filesize 10M
+    php_value post_max_size 10M
+</IfModule>

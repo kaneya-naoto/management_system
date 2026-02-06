@@ -1,7 +1,24 @@
 {
   "permissions": {
     "allow": [
-      "Skill(codex)"
-    ]
+      "Skill(codex)",
+      "Bash(php -l:*)",
+      "Bash(codex exec:*)",
+      "Bash(tree:*)",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(ssh:*)",
+      "Bash(scp:*)",
+      "Bash(ssh-add:*)",
+      "Bash(chmod:*)",
+      "Bash(rsync:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(sshpass:*)",
+      "Bash(sudo apt-get install:*)",
+      "Bash(apt-get install:*)",
+      "Bash(python3:*)",
+      "Bash(KAKUREMA_SSH_PASSPHRASE='Ey9VVB494yuE' python3:*)",
+      "Bash(python deploy.py:*)"]
   }
 }

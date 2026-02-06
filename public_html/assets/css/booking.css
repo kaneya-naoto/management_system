@@ -1,0 +1,449 @@
+/**
+ * 予約フォーム専用CSS
+ * モダンでおしゃれなデザイン
+ */
+
+/* カラーパレット
+ * 公開予約ページ用: 管理画面 style.css の --color-* とは独立した配色
+ * 管理画面デザインシステム(Borders-only)とは異なり、公開ページ向けにシャドウを使用
+ */
+:root {
+    --booking-primary: #3b82f6;
+    --booking-primary-hover: #2563eb;
+    --booking-accent: #10b981;
+    --booking-accent-hover: #059669;
+    --booking-selected-bg: #eff6ff;
+    --booking-selected-border: #3b82f6;
+    /* 公開ページ用シャドウ: 顧客向けUIの視認性のため許容 */
+    --booking-card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --booking-card-shadow-hover: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* 予約フォーム全体 */
+.booking-container {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+/* ステップインジケーター（モダン版） */
+.booking-steps {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    margin-bottom: 2rem;
+    padding: 0 1rem;
+}
+
+.booking-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.booking-step-number {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #e5e7eb;
+    color: #9ca3af;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    position: relative;
+    z-index: 1;
+}
+
+.booking-step.active .booking-step-number {
+    background: var(--booking-primary);
+    color: white;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+}
+
+.booking-step.completed .booking-step-number {
+    background: var(--booking-accent);
+    color: white;
+}
+
+.booking-step-label {
+    font-size: 0.75rem;
+    margin-top: 0.5rem;
+    color: #9ca3af;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.booking-step.active .booking-step-label {
+    color: var(--booking-primary);
+    font-weight: 600;
+}
+
+.booking-step.completed .booking-step-label {
+    color: var(--booking-accent);
+}
+
+.booking-step-connector {
+    flex: 1;
+    height: 3px;
+    background: #e5e7eb;
+    margin: 22px 0.75rem 0;
+    min-width: 50px;
+    border-radius: 2px;
+}
+
+.booking-step.completed + .booking-step-connector,
+.booking-step-connector.completed {
+    background: var(--booking-accent);
+}
+
+/* カード（部屋選択用） */
+.room-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.room-card {
+    background: white;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.room-card:hover {
+    border-color: #d1d5db;
+    box-shadow: var(--booking-card-shadow-hover);
+    transform: translateY(-2px);
+}
+
+.room-card.selected {
+    border-color: var(--booking-selected-border);
+    background: var(--booking-selected-bg);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.room-card.selected::after {
+    content: '\F272'; /* Bootstrap Icons checkmark */
+    font-family: 'bootstrap-icons';
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 24px;
+    height: 24px;
+    background: var(--booking-primary);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+}
+
+.room-card-image {
+    width: 100%;
+    height: 160px;
+    object-fit: cover;
+    background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
+    font-size: 3rem;
+}
+
+.room-card-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.room-card-body {
+    padding: 1rem;
+}
+
+.room-card-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 0.25rem;
+}
+
+.room-card-store {
+    font-size: 0.75rem;
+    color: #6b7280;
+    margin-bottom: 0.5rem;
+}
+
+.room-card-description {
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin-bottom: 0.75rem;
+    line-height: 1.5;
+}
+
+.room-card-info {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.75rem;
+    color: #9ca3af;
+}
+
+.room-card-info span {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.room-card-price {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #e5e7eb;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--booking-primary);
+}
+
+.room-card-price small {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: #6b7280;
+}
+
+/* 入力フォームのスタイル強化 */
+.booking-form .form-control,
+.booking-form .form-select {
+    border-radius: 8px;
+    border: 2px solid #e5e7eb;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.booking-form .form-control:focus,
+.booking-form .form-select:focus {
+    border-color: var(--booking-primary);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.booking-form .form-label {
+    font-weight: 500;
+    color: #374151;
+    margin-bottom: 0.5rem;
+}
+
+/* ボタンスタイル */
+.btn-booking-primary {
+    background: var(--booking-primary);
+    border: none;
+    color: white;
+    padding: 0.875rem 2rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.btn-booking-primary:hover:not(:disabled) {
+    background: var(--booking-primary-hover);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+}
+
+.btn-booking-primary:disabled {
+    background: #9ca3af;
+    cursor: not-allowed;
+}
+
+.btn-booking-success {
+    background: var(--booking-accent);
+    border: none;
+    color: white;
+    padding: 0.875rem 2rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.btn-booking-success:hover:not(:disabled) {
+    background: var(--booking-accent-hover);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+}
+
+/* カードスタイル */
+.booking-card {
+    background: white;
+    border-radius: 8px;
+    box-shadow: var(--booking-card-shadow);
+    overflow: hidden;
+}
+
+.booking-card-header {
+    background: linear-gradient(135deg, var(--booking-primary) 0%, #2563eb 100%);
+    color: white;
+    padding: 1.25rem 1.5rem;
+}
+
+.booking-card-header h5 {
+    margin: 0;
+    font-weight: 600;
+}
+
+.booking-card-body {
+    padding: 1.5rem;
+}
+
+/* サマリーカード */
+.booking-summary {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+.booking-summary-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #6b7280;
+    margin-bottom: 0.5rem;
+}
+
+.booking-summary-content {
+    font-size: 1rem;
+    color: #1f2937;
+}
+
+/* 空き状況アラート */
+.availability-alert {
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.availability-alert.available {
+    background: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+.availability-alert.unavailable {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+}
+
+.availability-alert.error {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+}
+
+.availability-alert i {
+    font-size: 1.25rem;
+}
+
+/* 完了画面 */
+.booking-complete-icon {
+    width: 80px;
+    height: 80px;
+    background: linear-gradient(135deg, var(--booking-accent) 0%, #059669 100%);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1.5rem;
+    color: white;
+    font-size: 2.5rem;
+}
+
+.booking-complete-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 0.5rem;
+}
+
+.booking-complete-subtitle {
+    color: #6b7280;
+    margin-bottom: 2rem;
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 576px) {
+    .booking-steps {
+        padding: 0 0.5rem;
+    }
+
+    .booking-step-number {
+        width: 36px;
+        height: 36px;
+        font-size: 0.875rem;
+    }
+
+    .booking-step-label {
+        font-size: 0.625rem;
+    }
+
+    .booking-step-connector {
+        min-width: 30px;
+        margin: 18px 0.5rem 0;
+    }
+
+    .room-cards {
+        grid-template-columns: 1fr;
+    }
+
+    .room-card-image {
+        height: 140px;
+    }
+}
+
+/* 時間選択グリッド */
+.time-select-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+@media (max-width: 576px) {
+    .time-select-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* アニメーション */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.booking-card {
+    animation: fadeIn 0.3s ease;
+}
+
+/* 隠しラジオボタン */
+.room-card input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
