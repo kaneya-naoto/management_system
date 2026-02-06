@@ -4,7 +4,7 @@
  */
 $pageTitle = 'リッチメニュー設定';
 
-require __DIR__ . '/../../includes/line_helpers.php';
+require_once __DIR__ . '/../../includes/line_helpers.php';
 
 requireLogin();
 $user = currentUser();

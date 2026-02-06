@@ -418,8 +418,26 @@ function requireCsrf(): void
     $token = $_POST[CSRF_TOKEN_NAME] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
 
     if (!verifyCsrfToken($token)) {
-        http_response_code(403);
-        exit('不正なリクエストです');
+        // API/Ajaxリクエストの場合はJSONで返す
+        if (!empty($_SERVER['HTTP_X_CSRF_TOKEN']) ||
+            (isset($_SERVER['HTTP_ACCEPT']) && str_contains($_SERVER['HTTP_ACCEPT'], 'application/json'))) {
+            http_response_code(403);
+            header('Content-Type: application/json');
+            exit(json_encode(['error' => 'セッションが切れました。ページを再読み込みしてください。']));
+        }
+
+        // 通常のフォーム送信：フラッシュメッセージで元ページへ戻す
+        flashError('セッションの有効期限が切れました。もう一度お試しください。');
+        $referer = $_SERVER['HTTP_REFERER'] ?? '';
+        $appHost = parse_url(APP_URL, PHP_URL_HOST);
+        $refererHost = parse_url($referer, PHP_URL_HOST);
+
+        if ($referer && $refererHost === $appHost) {
+            header('Location: ' . $referer);
+        } else {
+            redirect('/dashboard');
+        }
+        exit;
     }
 }
 

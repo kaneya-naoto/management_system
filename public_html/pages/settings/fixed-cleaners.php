@@ -54,17 +54,27 @@ if (isPost()) {
         }
 
         if (empty($errors)) {
-            // 重複チェックとINSERTをトランザクションで保護
+            // 重複チェックとINSERT/復元をトランザクションで保護
             dbBegin();
             try {
-                // FOR UPDATE で重複チェック（ロック付き）
+                // FOR UPDATE で重複チェック（論理削除済みも含む）
                 $existing = dbSelectOne(
-                    "SELECT id FROM fixed_cleaners WHERE store_id = ? AND cleaner_id = ? AND deleted_at IS NULL FOR UPDATE",
+                    "SELECT id, deleted_at FROM fixed_cleaners WHERE store_id = ? AND cleaner_id = ? FOR UPDATE",
                     [$storeId, $cleanerId]
                 );
-                if ($existing) {
+                if ($existing && $existing['deleted_at'] === null) {
                     dbRollback();
                     $errors[] = 'この清掃者は既に固定者として登録されています';
+                } elseif ($existing) {
+                    // 論理削除済み → 復元（UNIQUE制約違反を回避）
+                    dbUpdate('fixed_cleaners', [
+                        'priority' => max(1, min(99, $priority)),
+                        'is_active' => 1,
+                        'deleted_at' => null,
+                    ], 'id = ?', [$existing['id']]);
+                    dbCommit();
+                    flashSuccess('固定者を追加しました');
+                    redirect('/settings/fixed-cleaners');
                 } else {
                     dbInsert('fixed_cleaners', [
                         'store_id' => $storeId,

@@ -619,16 +619,9 @@ require __DIR__ . '/../../includes/header.php';
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <!-- 削除フォーム（別フォームで分離） -->
-                    <form method="post" class="me-auto">
-                        <input type="hidden" name="<?= CSRF_TOKEN_NAME ?>" value="<?= generateCsrfToken() ?>">
-                        <input type="hidden" name="store_id" value="<?= h($editStoreId) ?>">
-                        <input type="hidden" name="area_id" id="deleteAreaId" value="">
-                        <button type="submit" class="btn btn-outline-danger" name="action" value="delete_area"
-                                onclick="document.getElementById('deleteAreaId').value = document.getElementById('editAreaId').value; return confirm('この営業区分を削除しますか？')">
-                            削除
-                        </button>
-                    </form>
+                    <button type="button" class="btn btn-outline-danger me-auto" onclick="deleteArea()">
+                        削除
+                    </button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
                     <button type="submit" class="btn btn-primary" form="editAreaForm">保存</button>
                 </div>
@@ -637,8 +630,22 @@ require __DIR__ . '/../../includes/header.php';
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<!-- 営業区分削除フォーム（モーダル外に配置してネスト回避） -->
+<form method="post" id="deleteAreaForm" style="display: none;">
+    <input type="hidden" name="<?= CSRF_TOKEN_NAME ?>" value="<?= generateCsrfToken() ?>">
+    <input type="hidden" name="action" value="delete_area">
+    <input type="hidden" name="area_id" id="deleteAreaId" value="">
+</form>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
 <script>
+// 営業区分削除
+function deleteArea() {
+    if (!confirm('この営業区分を削除しますか？')) return;
+    document.getElementById('deleteAreaId').value = document.getElementById('editAreaId').value;
+    document.getElementById('deleteAreaForm').submit();
+}
+
 // 24時間営業トグル
 function toggle24hMode(is24h) {
     const fields = document.getElementById('businessHoursFields');
