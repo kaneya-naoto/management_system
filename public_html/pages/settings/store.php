@@ -52,18 +52,32 @@ if (isPost()) {
     $action = input('action', '');
 
     if ($action === 'update_store') {
+        // 基本情報
         $name = trim(input('name', ''));
         $address = trim(input('address', ''));
         $phone = trim(input('phone', ''));
         $email = trim(input('email', ''));
-        $baseReward = (int) input('base_reward', 3000);
 
         // 営業時間
         $is24hOpen = input('is_24h_open', '0') === '1';
         $openingTime = input('opening_time', '10:00');
         $closingTime = input('closing_time', '00:00');
 
-        // バリデーション
+        // 予約設定
+        $defaultHourlyRate = (int) input('default_hourly_rate', DEFAULT_HOURLY_RATE);
+        $minDurationHours = (int) input('min_duration_hours', MIN_BOOKING_DURATION_HOURS);
+        $maxDurationHours = (int) input('max_duration_hours', MAX_BOOKING_DURATION_HOURS);
+        $bookingDaysAhead = (int) input('booking_days_ahead', 30);
+
+        // 清掃・延長設定
+        $baseReward = (int) input('base_reward', DEFAULT_CLEANING_REWARD);
+        $extensionPricePerHour = (int) input('extension_price_per_hour', EXTENSION_PRICE_PER_HOUR);
+        $maxExtensionHours = (float) input('max_extension_hours', MAX_EXTENSION_HOURS);
+        $cleaningTimeMinutes = (int) input('cleaning_time_minutes', CLEANING_TIME_MINUTES);
+
+        // === バリデーション ===
+
+        // 基本情報
         if (empty($name)) {
             $errors[] = '店舗名を入力してください';
         } elseif (mb_strlen($name) > 100) {
@@ -74,11 +88,7 @@ if (isPost()) {
             $errors[] = 'メールアドレスの形式が正しくありません';
         }
 
-        if ($baseReward < 0 || $baseReward > 100000) {
-            $errors[] = '基本報酬は0〜100,000円の範囲で設定してください';
-        }
-
-        // 営業時間のバリデーション
+        // 営業時間
         if (!$is24hOpen) {
             if (!preg_match('/^([01][0-9]|2[0-3]):[0-5][0-9]$/', $openingTime)) {
                 $errors[] = '営業開始時間の形式が正しくありません';
@@ -88,16 +98,57 @@ if (isPost()) {
             }
         }
 
+        // 予約設定
+        if ($defaultHourlyRate < 0 || $defaultHourlyRate > 100000) {
+            $errors[] = 'デフォルト時間単価は0〜100,000円の範囲で設定してください';
+        }
+        if ($minDurationHours < 1 || $minDurationHours > 24) {
+            $errors[] = '最小利用時間は1〜24時間の範囲で設定してください';
+        }
+        if ($maxDurationHours < 1 || $maxDurationHours > 24) {
+            $errors[] = '最大利用時間は1〜24時間の範囲で設定してください';
+        }
+        if ($minDurationHours > $maxDurationHours) {
+            $errors[] = '最小利用時間は最大利用時間以下に設定してください';
+        }
+        if ($bookingDaysAhead < 1 || $bookingDaysAhead > 365) {
+            $errors[] = '予約受付日数は1〜365日の範囲で設定してください';
+        }
+
+        // 清掃・延長設定
+        if ($baseReward < 0 || $baseReward > 100000) {
+            $errors[] = '基本清掃報酬は0〜100,000円の範囲で設定してください';
+        }
+        if ($extensionPricePerHour < 0 || $extensionPricePerHour > 100000) {
+            $errors[] = '延長1時間あたり料金は0〜100,000円の範囲で設定してください';
+        }
+        // 刻み幅検証: UIはselect(0.5刻み/15分刻み)だが、改ざんPOST防止のためサーバー側でも検証
+        $allowedExtHours = [];
+        for ($v = 0.5; $v <= 8.0; $v += 0.5) { $allowedExtHours[] = $v; }
+        if (!in_array($maxExtensionHours, $allowedExtHours, false)) {
+            $errors[] = '最大延長時間は0.5時間刻みで0.5〜8.0時間の範囲で設定してください';
+        }
+        if ($cleaningTimeMinutes < 15 || $cleaningTimeMinutes > 180 || $cleaningTimeMinutes % 15 !== 0) {
+            $errors[] = 'デフォルト清掃時間は15分刻みで15〜180分の範囲で設定してください';
+        }
+
         if (empty($errors)) {
             dbUpdate('stores', [
                 'name' => $name,
                 'address' => $address ?: null,
                 'phone' => $phone ?: null,
                 'email' => $email ?: null,
-                'base_reward' => $baseReward,
                 'is_24h_open' => $is24hOpen ? 1 : 0,
                 'opening_time' => $openingTime . ':00',
                 'closing_time' => $closingTime . ':00',
+                'default_hourly_rate' => $defaultHourlyRate,
+                'min_duration_hours' => $minDurationHours,
+                'max_duration_hours' => $maxDurationHours,
+                'booking_days_ahead' => $bookingDaysAhead,
+                'base_reward' => $baseReward,
+                'extension_price_per_hour' => $extensionPricePerHour,
+                'max_extension_hours' => $maxExtensionHours,
+                'cleaning_time_minutes' => $cleaningTimeMinutes,
             ], 'id = ?', [$editStoreId]);
 
             flashSuccess('店舗情報を更新しました');
@@ -109,10 +160,17 @@ if (isPost()) {
         $store['address'] = $address;
         $store['phone'] = $phone;
         $store['email'] = $email;
-        $store['base_reward'] = $baseReward;
         $store['is_24h_open'] = $is24hOpen ? 1 : 0;
         $store['opening_time'] = $openingTime . ':00';
         $store['closing_time'] = $closingTime . ':00';
+        $store['default_hourly_rate'] = $defaultHourlyRate;
+        $store['min_duration_hours'] = $minDurationHours;
+        $store['max_duration_hours'] = $maxDurationHours;
+        $store['booking_days_ahead'] = $bookingDaysAhead;
+        $store['base_reward'] = $baseReward;
+        $store['extension_price_per_hour'] = $extensionPricePerHour;
+        $store['max_extension_hours'] = $maxExtensionHours;
+        $store['cleaning_time_minutes'] = $cleaningTimeMinutes;
     }
 
     // 営業区分追加
@@ -121,6 +179,7 @@ if (isPost()) {
         $areaHourlyRate = (int) input('area_hourly_rate', 2500);
         $areaCapacity = (int) input('area_capacity', 4);
         $areaDescription = trim(input('area_description', ''));
+        $areaCleaningDuration = input('area_cleaning_duration', '');
 
         if (empty($areaName)) {
             $areaErrors[] = '区分名を入力してください';
@@ -143,6 +202,9 @@ if (isPost()) {
         if ($areaCapacity < 1 || $areaCapacity > 100) {
             $areaErrors[] = '定員は1〜100名の範囲で設定してください';
         }
+        if ($areaCleaningDuration !== '' && ((int)$areaCleaningDuration < 15 || (int)$areaCleaningDuration > 180 || (int)$areaCleaningDuration % 15 !== 0)) {
+            $areaErrors[] = '清掃所要時間は15分刻みで15〜180分の範囲で設定してください';
+        }
 
         if (empty($areaErrors)) {
             // room_code を自動生成（16文字のランダム英数字、セキュリティ強化）
@@ -154,6 +216,7 @@ if (isPost()) {
                 'hourly_rate' => $areaHourlyRate,
                 'capacity' => $areaCapacity,
                 'description' => $areaDescription ?: null,
+                'cleaning_duration_minutes' => $areaCleaningDuration !== '' ? (int)$areaCleaningDuration : null,
                 'room_code' => $roomCode,
                 'is_active' => 1,
             ]);
@@ -170,6 +233,7 @@ if (isPost()) {
         $areaHourlyRate = (int) input('area_hourly_rate', 2500);
         $areaCapacity = (int) input('area_capacity', 4);
         $areaDescription = trim(input('area_description', ''));
+        $areaCleaningDuration = input('area_cleaning_duration', '');
         // チェックボックス未送信時は0（無効）
         $isActive = isset($_POST['is_active']) ? 1 : 0;
 
@@ -204,6 +268,9 @@ if (isPost()) {
         if ($areaCapacity < 1 || $areaCapacity > 100) {
             $areaErrors[] = '定員は1〜100名の範囲で設定してください';
         }
+        if ($areaCleaningDuration !== '' && ((int)$areaCleaningDuration < 15 || (int)$areaCleaningDuration > 180 || (int)$areaCleaningDuration % 15 !== 0)) {
+            $areaErrors[] = '清掃所要時間は15分刻みで15〜180分の範囲で設定してください';
+        }
 
         if (empty($areaErrors)) {
             dbUpdate('sales_areas', [
@@ -211,6 +278,7 @@ if (isPost()) {
                 'hourly_rate' => $areaHourlyRate,
                 'capacity' => $areaCapacity,
                 'description' => $areaDescription ?: null,
+                'cleaning_duration_minutes' => $areaCleaningDuration !== '' ? (int)$areaCleaningDuration : null,
                 'is_active' => $isActive,
             ], 'id = ?', [$areaId]);
 
@@ -261,6 +329,8 @@ if (isPost()) {
 }
 
 $csrfToken = generateCsrfToken();
+$storeCode = $store['code'] ?? '';
+$bookingUrl = rtrim(APP_URL, '/') . '/booking/' . $storeCode;
 
 require __DIR__ . '/../../includes/header.php';
 ?>
@@ -292,469 +362,27 @@ require __DIR__ . '/../../includes/header.php';
 </div>
 <?php endif; ?>
 
-<div class="row">
-    <div class="col-lg-6 mb-4">
-        <!-- 店舗基本情報 -->
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">店舗基本情報</h5>
-                <?php if ($store['is_active']): ?>
-                    <span class="badge bg-success">有効</span>
-                <?php else: ?>
-                    <span class="badge bg-secondary">無効</span>
-                <?php endif; ?>
-            </div>
-            <div class="card-body">
-                <?php if (!$store['is_active']): ?>
-                <div class="alert alert-warning">
-                    <i class="bi bi-exclamation-triangle"></i>
-                    <strong>この店舗は現在「無効」状態です</strong><br>
-                    <small class="text-muted">有効/無効の変更はHQに連絡してください</small>
-                </div>
-                <?php endif; ?>
+<form method="post" id="storeSettingsForm">
+    <input type="hidden" name="<?= CSRF_TOKEN_NAME ?>" value="<?= $csrfToken ?>">
+    <input type="hidden" name="action" value="update_store">
 
-                <?php if (!empty($errors)): ?>
-                <div class="alert alert-danger">
-                    <ul class="mb-0">
-                        <?php foreach ($errors as $error): ?>
-                        <li><?= h($error) ?></li>
-                        <?php endforeach; ?>
-                    </ul>
-                </div>
-                <?php endif; ?>
+    <div class="row">
+        <div class="col-lg-6">
+            <?php include __DIR__ . '/store/_basic_info.php'; ?>
+            <?php include __DIR__ . '/store/_business_hours.php'; ?>
+            <?php include __DIR__ . '/store/_booking_settings.php'; ?>
+            <?php include __DIR__ . '/store/_cleaning_settings.php'; ?>
 
-                <form method="post">
-                    <input type="hidden" name="<?= CSRF_TOKEN_NAME ?>" value="<?= $csrfToken ?>">
-                    <input type="hidden" name="action" value="update_store">
+            <button type="submit" class="btn btn-primary mb-4">保存</button>
+        </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">店舗コード</label>
-                        <input type="text" class="form-control" value="<?= h($store['code']) ?>" disabled>
-                        <div class="form-text">店舗コードは変更できません</div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">予約フォームURL</label>
-                        <?php
-                        $storeCode = $store['code'] ?? '';
-                        $bookingUrl = rtrim(APP_URL, '/') . '/booking/' . $storeCode;
-                        ?>
-                        <div class="input-group">
-                            <input type="text" class="form-control" value="<?= h($bookingUrl) ?>" id="bookingUrl" readonly>
-                            <button type="button" class="btn btn-outline-secondary" onclick="copyBookingUrl()" title="URLをコピー">
-                                <i class="bi bi-clipboard" id="copyIcon"></i>
-                            </button>
-                            <a href="<?= h($bookingUrl) ?>" target="_blank" class="btn btn-outline-primary" title="新しいタブで開く">
-                                <i class="bi bi-box-arrow-up-right"></i>
-                            </a>
-                        </div>
-                        <div class="form-text">このURLをお客様に共有してください</div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">店舗名 <span class="text-danger">*</span></label>
-                        <input type="text" name="name" class="form-control" value="<?= h($store['name']) ?>" required maxlength="100">
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">住所</label>
-                        <input type="text" name="address" class="form-control" value="<?= h($store['address']) ?>" maxlength="255">
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">電話番号</label>
-                        <input type="tel" name="phone" class="form-control" value="<?= h($store['phone']) ?>" maxlength="20">
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">メールアドレス</label>
-                        <input type="email" name="email" class="form-control" value="<?= h($store['email']) ?>" maxlength="255">
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">基本報酬</label>
-                        <div class="input-group">
-                            <input type="number" name="base_reward" class="form-control" value="<?= (int)$store['base_reward'] ?>" min="0" max="100000" step="100">
-                            <span class="input-group-text">円</span>
-                        </div>
-                        <div class="form-text">清掃1回あたりの基本報酬額</div>
-                    </div>
-
-                    <hr class="my-4">
-                    <h6 class="mb-3">営業時間設定</h6>
-
-                    <div class="mb-3">
-                        <div class="form-check">
-                            <input type="checkbox" class="form-check-input" name="is_24h_open" id="is24hOpen" value="1"
-                                   <?= !empty($store['is_24h_open']) ? 'checked' : '' ?>
-                                   onchange="toggle24hMode(this.checked)">
-                            <label class="form-check-label" for="is24hOpen">24時間営業</label>
-                        </div>
-                    </div>
-
-                    <div id="businessHoursFields" style="<?= !empty($store['is_24h_open']) ? 'display:none;' : '' ?>">
-                        <div class="row">
-                            <div class="col-6 mb-3">
-                                <label class="form-label">営業開始時間</label>
-                                <select name="opening_time" class="form-select" id="openingTime">
-                                    <?php for ($h = 0; $h < 24; $h++): ?>
-                                        <?php for ($m = 0; $m < 60; $m += 30): ?>
-                                            <?php $time = sprintf('%02d:%02d', $h, $m); ?>
-                                            <option value="<?= $time ?>" <?= substr($store['opening_time'] ?? '10:00:00', 0, 5) === $time ? 'selected' : '' ?>>
-                                                <?= $time ?>
-                                            </option>
-                                        <?php endfor; ?>
-                                    <?php endfor; ?>
-                                </select>
-                            </div>
-                            <div class="col-6 mb-3">
-                                <label class="form-label">営業終了時間</label>
-                                <select name="closing_time" class="form-select" id="closingTime">
-                                    <?php for ($h = 0; $h < 24; $h++): ?>
-                                        <?php for ($m = 0; $m < 60; $m += 30): ?>
-                                            <?php $time = sprintf('%02d:%02d', $h, $m); ?>
-                                            <?php $display = ($h === 0 && $m === 0) ? '24:00' : $time; ?>
-                                            <option value="<?= $time ?>" <?= substr($store['closing_time'] ?? '00:00:00', 0, 5) === $time ? 'selected' : '' ?>>
-                                                <?= $display ?>
-                                            </option>
-                                        <?php endfor; ?>
-                                    <?php endfor; ?>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-text mb-3">
-                            <i class="bi bi-info-circle"></i>
-                            終了時間が開始時間より早い場合は深夜営業（翌日までの営業）となります。<br>
-                            例: 18:00〜05:00 = 18時から翌朝5時まで
-                        </div>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary">保存</button>
-                </form>
-            </div>
+        <div class="col-lg-6">
+            <?php include __DIR__ . '/store/_sales_areas.php'; ?>
         </div>
     </div>
-
-    <div class="col-lg-6">
-        <!-- 営業区分管理 -->
-        <div class="card mb-4">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">営業区分</h5>
-                <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addAreaModal">
-                    <i class="bi bi-plus"></i> 追加
-                </button>
-            </div>
-            <div class="card-body p-0">
-                <?php if (!empty($areaErrors)): ?>
-                <div class="alert alert-danger m-3 mb-0">
-                    <ul class="mb-0">
-                        <?php foreach ($areaErrors as $error): ?>
-                        <li><?= h($error) ?></li>
-                        <?php endforeach; ?>
-                    </ul>
-                </div>
-                <?php endif; ?>
-
-                <?php if (empty($salesAreas)): ?>
-                <p class="text-muted text-center py-4 mb-0">営業区分がありません</p>
-                <?php else: ?>
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>区分名</th>
-                                <th class="text-end">時間単価</th>
-                                <th class="text-center">定員</th>
-                                <th>状態</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($salesAreas as $area): ?>
-                            <tr>
-                                <td><?= h($area['name']) ?></td>
-                                <td class="text-end"><?= number_format($area['hourly_rate'] ?? 2500) ?>円</td>
-                                <td class="text-center"><?= (int)($area['capacity'] ?? 4) ?>名</td>
-                                <td>
-                                    <?php if ($area['is_active']): ?>
-                                    <span class="badge bg-success">有効</span>
-                                    <?php else: ?>
-                                    <span class="badge bg-secondary">無効</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td class="text-end">
-                                    <button type="button" class="btn btn-sm btn-outline-primary"
-                                            data-bs-toggle="modal" data-bs-target="#editAreaModal"
-                                            data-id="<?= $area['id'] ?>"
-                                            data-name="<?= h($area['name']) ?>"
-                                            data-hourly-rate="<?= (int)($area['hourly_rate'] ?? 2500) ?>"
-                                            data-capacity="<?= (int)($area['capacity'] ?? 4) ?>"
-                                            data-description="<?= h($area['description'] ?? '') ?>"
-                                            data-room-code="<?= h($area['room_code'] ?? '') ?>"
-                                            data-active="<?= $area['is_active'] ?>">
-                                        編集
-                                    </button>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- 営業区分追加モーダル -->
-<div class="modal fade" id="addAreaModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="post">
-                <input type="hidden" name="<?= CSRF_TOKEN_NAME ?>" value="<?= $csrfToken ?>">
-                <input type="hidden" name="action" value="add_area">
-
-                <div class="modal-header">
-                    <h5 class="modal-title">営業区分を追加</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">区分名 <span class="text-danger">*</span></label>
-                        <input type="text" name="area_name" class="form-control" required maxlength="100"
-                               placeholder="例: VIPルーム">
-                    </div>
-                    <div class="row">
-                        <div class="col-6 mb-3">
-                            <label class="form-label">時間単価 <span class="text-danger">*</span></label>
-                            <div class="input-group">
-                                <input type="number" name="area_hourly_rate" class="form-control" value="2500" min="0" max="100000" step="100" required>
-                                <span class="input-group-text">円</span>
-                            </div>
-                        </div>
-                        <div class="col-6 mb-3">
-                            <label class="form-label">定員 <span class="text-danger">*</span></label>
-                            <div class="input-group">
-                                <input type="number" name="area_capacity" class="form-control" value="4" min="1" max="100" required>
-                                <span class="input-group-text">名</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">説明文</label>
-                        <textarea name="area_description" class="form-control" rows="2" placeholder="部屋の特徴など"></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
-                    <button type="submit" class="btn btn-primary">追加</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- 営業区分編集モーダル -->
-<div class="modal fade" id="editAreaModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="post" id="editAreaForm">
-                <input type="hidden" name="<?= CSRF_TOKEN_NAME ?>" value="<?= $csrfToken ?>">
-                <input type="hidden" name="action" value="update_area">
-                <input type="hidden" name="area_id" id="editAreaId">
-
-                <div class="modal-header">
-                    <h5 class="modal-title">営業区分を編集</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">区分名 <span class="text-danger">*</span></label>
-                        <input type="text" name="area_name" id="editAreaName" class="form-control" required maxlength="100">
-                    </div>
-                    <div class="row">
-                        <div class="col-6 mb-3">
-                            <label class="form-label">時間単価 <span class="text-danger">*</span></label>
-                            <div class="input-group">
-                                <input type="number" name="area_hourly_rate" id="editAreaHourlyRate" class="form-control" min="0" max="100000" step="100" required>
-                                <span class="input-group-text">円</span>
-                            </div>
-                        </div>
-                        <div class="col-6 mb-3">
-                            <label class="form-label">定員 <span class="text-danger">*</span></label>
-                            <div class="input-group">
-                                <input type="number" name="area_capacity" id="editAreaCapacity" class="form-control" min="1" max="100" required>
-                                <span class="input-group-text">名</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">説明文</label>
-                        <textarea name="area_description" id="editAreaDescription" class="form-control" rows="2"></textarea>
-                    </div>
-                    <div class="mb-3">
-                        <div class="form-check">
-                            <input type="checkbox" name="is_active" value="1" class="form-check-input" id="editAreaActive">
-                            <label class="form-check-label" for="editAreaActive">有効</label>
-                        </div>
-                    </div>
-
-                    <!-- 延長用QRコード -->
-                    <div id="qrCodeSection" class="border-top pt-3 mt-3" style="display: none;">
-                        <h6 class="mb-3"><i class="bi bi-qr-code"></i> 延長申請用QRコード</h6>
-                        <div class="text-center mb-3">
-                            <div id="qrCodeContainer"></div>
-                        </div>
-                        <div class="input-group mb-2">
-                            <input type="text" class="form-control form-control-sm" id="extensionUrl" readonly>
-                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copyExtensionUrl()">
-                                <i class="bi bi-clipboard" id="copyExtUrlIcon"></i>
-                            </button>
-                        </div>
-                        <div class="d-grid">
-                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="downloadQRCode()">
-                                <i class="bi bi-download"></i> QRコードをダウンロード
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-danger me-auto" onclick="deleteArea()">
-                        削除
-                    </button>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
-                    <button type="submit" class="btn btn-primary" form="editAreaForm">保存</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- 営業区分削除フォーム（モーダル外に配置してネスト回避） -->
-<form method="post" id="deleteAreaForm" style="display: none;">
-    <input type="hidden" name="<?= CSRF_TOKEN_NAME ?>" value="<?= generateCsrfToken() ?>">
-    <input type="hidden" name="action" value="delete_area">
-    <input type="hidden" name="area_id" id="deleteAreaId" value="">
 </form>
 
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
-<script>
-// 営業区分削除
-function deleteArea() {
-    if (!confirm('この営業区分を削除しますか？')) return;
-    document.getElementById('deleteAreaId').value = document.getElementById('editAreaId').value;
-    document.getElementById('deleteAreaForm').submit();
-}
-
-// 24時間営業トグル
-function toggle24hMode(is24h) {
-    const fields = document.getElementById('businessHoursFields');
-    fields.style.display = is24h ? 'none' : '';
-}
-
-// 延長URLをコピー
-function copyExtensionUrl() {
-    const urlInput = document.getElementById('extensionUrl');
-    const copyIcon = document.getElementById('copyExtUrlIcon');
-
-    navigator.clipboard.writeText(urlInput.value).then(() => {
-        copyIcon.className = 'bi bi-check';
-        setTimeout(() => {
-            copyIcon.className = 'bi bi-clipboard';
-        }, 2000);
-    }).catch(() => {
-        urlInput.select();
-        document.execCommand('copy');
-        copyIcon.className = 'bi bi-check';
-        setTimeout(() => {
-            copyIcon.className = 'bi bi-clipboard';
-        }, 2000);
-    });
-}
-
-// QRコードをダウンロード
-function downloadQRCode() {
-    const canvas = document.querySelector('#qrCodeContainer canvas');
-    if (!canvas) return;
-
-    const areaName = document.getElementById('editAreaName').value || 'room';
-    const link = document.createElement('a');
-    link.download = `qr_${areaName}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-}
-
-// QRコードを生成
-function generateQRCode(roomCode) {
-    const container = document.getElementById('qrCodeContainer');
-    const urlInput = document.getElementById('extensionUrl');
-    const qrSection = document.getElementById('qrCodeSection');
-
-    if (!roomCode) {
-        qrSection.style.display = 'none';
-        return;
-    }
-
-    qrSection.style.display = 'block';
-    const url = '<?= rtrim(APP_URL, "/") ?>/extend/room/' + roomCode;
-    urlInput.value = url;
-
-    // 既存のQRコードをクリア
-    container.innerHTML = '';
-
-    // QRコード生成
-    QRCode.toCanvas(url, {
-        width: 200,
-        margin: 2,
-        color: { dark: '#000000', light: '#ffffff' }
-    }, function(error, canvas) {
-        if (error) {
-            console.error(error);
-            container.innerHTML = '<p class="text-danger">QRコード生成エラー</p>';
-            return;
-        }
-        container.appendChild(canvas);
-    });
-}
-
-// 予約URLをコピー
-function copyBookingUrl() {
-    const urlInput = document.getElementById('bookingUrl');
-    const copyIcon = document.getElementById('copyIcon');
-
-    navigator.clipboard.writeText(urlInput.value).then(() => {
-        // 成功時：アイコンを変更
-        copyIcon.className = 'bi bi-check';
-        setTimeout(() => {
-            copyIcon.className = 'bi bi-clipboard';
-        }, 2000);
-    }).catch(() => {
-        // フォールバック
-        urlInput.select();
-        document.execCommand('copy');
-        copyIcon.className = 'bi bi-check';
-        setTimeout(() => {
-            copyIcon.className = 'bi bi-clipboard';
-        }, 2000);
-    });
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-    const editModal = document.getElementById('editAreaModal');
-    editModal.addEventListener('show.bs.modal', function(event) {
-        const button = event.relatedTarget;
-        document.getElementById('editAreaId').value = button.dataset.id;
-        document.getElementById('editAreaName').value = button.dataset.name;
-        document.getElementById('editAreaHourlyRate').value = button.dataset.hourlyRate || 2500;
-        document.getElementById('editAreaCapacity').value = button.dataset.capacity || 4;
-        document.getElementById('editAreaDescription').value = button.dataset.description || '';
-        document.getElementById('editAreaActive').checked = button.dataset.active === '1';
-
-        // QRコード生成
-        const roomCode = button.dataset.roomCode || '';
-        generateQRCode(roomCode);
-    });
-});
-</script>
+<?php include __DIR__ . '/store/_modals.php'; ?>
+<?php include __DIR__ . '/store/_scripts.php'; ?>
 
 <?php require __DIR__ . '/../../includes/footer.php'; ?>

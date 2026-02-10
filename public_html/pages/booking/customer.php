@@ -21,6 +21,21 @@ $reservationDate = input('reservation_date', '');
 $startTime = input('start_time', '');
 $endTime = input('end_time', '');
 
+// 店舗設定を取得（営業区分のstore_id経由）
+$bookingStoreSettings = null;
+if ($salesAreaId > 0) {
+    $areaStore = dbSelectOne(
+        "SELECT store_id FROM sales_areas WHERE id = ? AND deleted_at IS NULL",
+        [$salesAreaId]
+    );
+    if ($areaStore) {
+        $bookingStoreSettings = getStoreSettings((int)$areaStore['store_id']);
+    }
+}
+$bookingDaysAhead = $bookingStoreSettings['booking_days_ahead'] ?? 30;
+$maxDurationHours = $bookingStoreSettings['max_duration_hours'] ?? MAX_BOOKING_DURATION_HOURS;
+$minDurationHours = $bookingStoreSettings['min_duration_hours'] ?? MIN_BOOKING_DURATION_HOURS;
+
 // バリデーション
 $errors = [];
 if ($salesAreaId <= 0) {
@@ -35,8 +50,8 @@ if (empty($reservationDate) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $reservation
         $errors[] = '無効な日付です';
     } elseif ($reservationDate < date('Y-m-d')) {
         $errors[] = '過去の日付は選択できません';
-    } elseif ($reservationDate > date('Y-m-d', strtotime('+30 days'))) {
-        $errors[] = '30日以上先の日付は選択できません';
+    } elseif ($reservationDate > date('Y-m-d', strtotime('+' . $bookingDaysAhead . ' days'))) {
+        $errors[] = $bookingDaysAhead . '日以上先の日付は選択できません';
     }
 }
 if (empty($startTime) || empty($endTime)) {
@@ -76,11 +91,11 @@ if (!empty($startTime) && !empty($endTime)) {
     }
 
     $durationMinutes = $endMinutes - $startMinutes;
-    if ($durationMinutes > 8 * 60) {
-        $errors[] = '最大8時間までご利用いただけます';
+    if ($durationMinutes > $maxDurationHours * 60) {
+        $errors[] = '最大' . $maxDurationHours . '時間までご利用いただけます';
     }
-    if ($durationMinutes < 60) {
-        $errors[] = '最低1時間からご利用いただけます';
+    if ($durationMinutes < $minDurationHours * 60) {
+        $errors[] = '最低' . $minDurationHours . '時間からご利用いただけます';
     }
 }
 

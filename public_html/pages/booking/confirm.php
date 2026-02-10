@@ -24,6 +24,9 @@ if (!$booking) {
     redirect($bookingBasePath);
 }
 
+// 店舗設定を取得
+$storeSettings = getStoreSettings((int)($booking['store_id'] ?? 0));
+
 // 顧客情報取得
 $customerName = trim(input('customer_name', ''));
 $customerEmail = trim(input('customer_email', ''));
@@ -71,9 +74,9 @@ if ($endMinutes <= $startMinutes) {
 
 $hours = ($endMinutes - $startMinutes) / 60;
 
-// 時間の妥当性チェック（最小・最大予約時間）
-if ($hours < MIN_BOOKING_DURATION_HOURS || $hours > MAX_BOOKING_DURATION_HOURS) {
-    flashError('利用時間が不正です。' . MIN_BOOKING_DURATION_HOURS . '〜' . MAX_BOOKING_DURATION_HOURS . '時間の範囲で選択してください。');
+// 時間の妥当性チェック（最小・最大予約時間 — 店舗設定参照）
+if ($hours < $storeSettings['min_duration_hours'] || $hours > $storeSettings['max_duration_hours']) {
+    flashError('利用時間が不正です。' . $storeSettings['min_duration_hours'] . '〜' . $storeSettings['max_duration_hours'] . '時間の範囲で選択してください。');
     redirect($bookingBasePath);
 }
 
@@ -103,7 +106,7 @@ if ($capacity > 0 && $numPeople > $capacity) {
     redirect($bookingBasePath);
 }
 
-$pricePerHour = (int)($salesArea['hourly_rate'] ?? DEFAULT_HOURLY_RATE);
+$pricePerHour = (int)($salesArea['hourly_rate'] ?? $storeSettings['default_hourly_rate']);
 $basePrice = (int) ($hours * $pricePerHour);
 
 // セッションに顧客情報追加

@@ -64,17 +64,12 @@ if ($endMinutes <= $startMinutes) {
 
 $durationMinutes = $endMinutes - $startMinutes;
 
-// 予約時間は1〜8時間
-if ($durationMinutes < 60 || $durationMinutes > 8 * 60) {
-    jsonResponse(['available' => false, 'message' => '予約は1〜8時間の範囲で選択してください']);
-}
-
 // 過去日チェック
 if ($reservationDate < date('Y-m-d')) {
     jsonResponse(['available' => false, 'message' => '過去の日付は選択できません']);
 }
 
-// 営業区分存在チェック
+// 営業区分存在チェック（store_id も取得して店舗設定参照に使用）
 $salesArea = dbSelectOne(
     "SELECT sa.*, s.name as store_name
      FROM sales_areas sa
@@ -82,6 +77,22 @@ $salesArea = dbSelectOne(
      WHERE sa.id = ? AND sa.is_active = 1 AND sa.deleted_at IS NULL",
     [$salesAreaId]
 );
+
+// 店舗設定に基づく利用時間バリデーション
+if ($salesArea) {
+    $storeSettings = getStoreSettings((int)$salesArea['store_id']);
+    $minMinutes = $storeSettings['min_duration_hours'] * 60;
+    $maxMinutes = $storeSettings['max_duration_hours'] * 60;
+} else {
+    $minMinutes = MIN_BOOKING_DURATION_HOURS * 60;
+    $maxMinutes = MAX_BOOKING_DURATION_HOURS * 60;
+}
+
+if ($durationMinutes < $minMinutes || $durationMinutes > $maxMinutes) {
+    $minH = $minMinutes / 60;
+    $maxH = $maxMinutes / 60;
+    jsonResponse(['available' => false, 'message' => "予約は{$minH}〜{$maxH}時間の範囲で選択してください"]);
+}
 
 if (!$salesArea) {
     jsonResponse(['available' => false, 'message' => '選択された店舗は利用できません']);

@@ -133,13 +133,13 @@ define('CSRF_TOKEN_LENGTH', 64); // 16進数文字列長
 define('LOGIN_MAX_ATTEMPTS', 5);
 define('LOGIN_LOCKOUT_TIME', 900); // 15分
 
-// 清掃案件設定
+// 清掃案件設定 ※ 店舗設定(stores テーブル)が優先される。ここはフォールバック用
 define('DEFAULT_CLEANING_REWARD', 2000); // デフォルト基本報酬（円）
 define('EXTENSION_PRICE_PER_HOUR', 1000); // 延長1時間あたりの顧客料金（円）
 define('MAX_EXTENSION_HOURS', 5.0); // 最大延長時間（時間）
 define('CLEANING_TIME_MINUTES', 60); // 清掃時間（分）- 予約間に必要な時間
 
-// 予約設定（デフォルト値）
+// 予約設定（デフォルト値） ※ 店舗設定(stores テーブル)が優先される。ここはフォールバック用
 define('DEFAULT_HOURLY_RATE', 2500); // デフォルト時間単価（円）
 define('DEFAULT_CAPACITY', 4); // デフォルト定員（名）
 define('MAX_BOOKING_DURATION_HOURS', 8); // 最大予約時間

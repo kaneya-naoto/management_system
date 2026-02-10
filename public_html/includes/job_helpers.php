@@ -80,11 +80,9 @@ function createCleaningJobForReservation(
     // 清掃終了予定時刻を計算
     $scheduledEndAt = date('Y-m-d H:i:s', strtotime($scheduledAt . " +{$cleaningMinutes} minutes"));
 
-    // 店舗設定から報酬を取得（フォールバック: DEFAULT_CLEANING_REWARD）
-    $store = dbSelectOne("SELECT base_reward FROM stores WHERE id = ?", [$storeId]);
-    $baseReward = ($store && $store['base_reward'] !== null)
-        ? (int) $store['base_reward']
-        : (defined('DEFAULT_CLEANING_REWARD') ? DEFAULT_CLEANING_REWARD : 2000);
+    // 店舗設定から報酬を取得（getStoreSettings経由、フォールバック: DEFAULT_CLEANING_REWARD）
+    $storeSettings = getStoreSettings($storeId);
+    $baseReward = $storeSettings['base_reward'];
 
     return dbInsert('cleaning_jobs', [
         'reservation_id' => $reservationId,

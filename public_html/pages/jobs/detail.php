@@ -437,7 +437,8 @@ if (isPost()) {
     // 延長登録
     if ($action === 'add_extension') {
         $rawExtensionHours = input('extension_hours', '');
-        $maxExtension = MAX_EXTENSION_HOURS;
+        $storeSettings = getStoreSettings((int) $job['store_id']);
+        $maxExtension = $storeSettings['max_extension_hours'];
 
         // 型チェック: 数値かどうか検証
         if (!is_numeric($rawExtensionHours)) {
@@ -445,10 +446,13 @@ if (isPost()) {
         } else {
             $extensionHours = (float) $rawExtensionHours;
 
-            // 許可された値のみ受け付ける（0.5刻み）
-            $allowedValues = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0];
+            // 許可された値のみ受け付ける（0.5刻み、店舗設定のmax_extension_hoursまで）
+            $allowedValues = [];
+            for ($v = 0.5; $v <= $maxExtension; $v += 0.5) {
+                $allowedValues[] = $v;
+            }
             if (!in_array($extensionHours, $allowedValues, true)) {
-                $errors[] = '延長時間は0.5〜5時間の範囲で0.5時間単位で選択してください';
+                $errors[] = "延長時間は0.5〜{$maxExtension}時間の範囲で0.5時間単位で選択してください";
             } elseif ($extensionHours > $maxExtension) {
                 $errors[] = "延長時間は最大{$maxExtension}時間です";
             } elseif (!in_array($job['status'], ['assigned', 'completed'], true)) {
@@ -457,8 +461,8 @@ if (isPost()) {
         }
 
         if (empty($errors)) {
-            // 顧客延長料金を計算（EXTENSION_PRICE_PER_HOUR ベース）
-            $ratePerHour = EXTENSION_PRICE_PER_HOUR;
+            // 顧客延長料金を計算（店舗設定のextension_price_per_hour ベース）
+            $ratePerHour = $storeSettings['extension_price_per_hour'];
             $additionalPrice = (int) ($ratePerHour * $extensionHours);
 
             dbBegin();
@@ -868,8 +872,13 @@ require __DIR__ . '/../../includes/header.php';
                 <h5 class="mb-0">延長登録</h5>
             </div>
             <div class="card-body">
+                <?php
+                $detailStoreSettings = getStoreSettings((int) $job['store_id']);
+                $detailMaxExtHours = $detailStoreSettings['max_extension_hours'];
+                $detailExtPrice = $detailStoreSettings['extension_price_per_hour'];
+                ?>
                 <p class="text-muted small mb-3">
-                    延長料金: <?= formatMoney(EXTENSION_PRICE_PER_HOUR) ?>/時間（顧客請求）
+                    延長料金: <?= formatMoney($detailExtPrice) ?>/時間（顧客請求）
                 </p>
                 <form method="post">
                     <input type="hidden" name="<?= CSRF_TOKEN_NAME ?>" value="<?= $csrfToken ?>">
@@ -877,16 +886,20 @@ require __DIR__ . '/../../includes/header.php';
                     <div class="mb-3">
                         <label class="form-label">延長時間</label>
                         <select name="extension_hours" class="form-select">
-                            <option value="0.5">30分</option>
-                            <option value="1" selected>1時間</option>
-                            <option value="1.5">1時間30分</option>
-                            <option value="2">2時間</option>
-                            <option value="2.5">2時間30分</option>
-                            <option value="3">3時間</option>
-                            <option value="3.5">3時間30分</option>
-                            <option value="4">4時間</option>
-                            <option value="4.5">4時間30分</option>
-                            <option value="5">5時間</option>
+                            <?php for ($h = 0.5; $h <= $detailMaxExtHours; $h += 0.5): ?>
+                            <?php
+                                $wholeH = (int) floor($h);
+                                $remainM = (int) (($h - $wholeH) * 60);
+                                if ($remainM === 0) {
+                                    $optLabel = $wholeH . '時間';
+                                } elseif ($wholeH === 0) {
+                                    $optLabel = $remainM . '分';
+                                } else {
+                                    $optLabel = $wholeH . '時間' . $remainM . '分';
+                                }
+                            ?>
+                            <option value="<?= $h ?>" <?= $h == 1.0 ? 'selected' : '' ?>><?= $optLabel ?></option>
+                            <?php endfor; ?>
                         </select>
                     </div>
                     <button type="submit" class="btn btn-info w-100">延長を追加</button>

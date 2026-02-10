@@ -148,7 +148,7 @@ function isSameDayReservation(string $reservationDate): bool
 }
 
 /**
- * 清掃時間を取得（sales_areas優先、なければデフォルト）
+ * 清掃時間を取得（3段階フォールバック: 営業区分 > 店舗設定 > config定数）
  * @param int $salesAreaId 営業区分ID
  * @return int 清掃時間（分）
  */
@@ -161,12 +161,21 @@ function getCleaningDuration(int $salesAreaId): int
     }
 
     $salesArea = dbSelectOne(
-        "SELECT cleaning_duration_minutes FROM sales_areas WHERE id = ? AND deleted_at IS NULL",
+        "SELECT cleaning_duration_minutes, store_id FROM sales_areas WHERE id = ? AND deleted_at IS NULL",
         [$salesAreaId]
     );
 
-    $duration = $salesArea['cleaning_duration_minutes']
-        ?? (defined('CLEANING_TIME_MINUTES') ? CLEANING_TIME_MINUTES : 60);
+    // 1. 営業区分の個別設定（NULLでなければ使用）
+    if ($salesArea && $salesArea['cleaning_duration_minutes'] !== null) {
+        $duration = (int) $salesArea['cleaning_duration_minutes'];
+    } elseif ($salesArea && $salesArea['store_id']) {
+        // 2. 店舗設定（getStoreSettings経由、config定数がフォールバック）
+        $storeSettings = getStoreSettings((int) $salesArea['store_id']);
+        $duration = $storeSettings['cleaning_time_minutes'];
+    } else {
+        // 3. config.php定数（最終フォールバック）
+        $duration = defined('CLEANING_TIME_MINUTES') ? CLEANING_TIME_MINUTES : 60;
+    }
 
     $cache[$salesAreaId] = $duration;
     return $duration;
@@ -427,10 +436,14 @@ function calculateAvailableExtension(int $salesAreaId, int $storeId, string $sta
         }
     }
 
+    // 店舗設定から最大延長時間を取得
+    $storeSettings = getStoreSettings($storeId);
+    $maxExtensionHours = $storeSettings['max_extension_hours'];
+
     // 延長可能時間を計算
     if ($maxEndTime === null) {
-        // 制限なし（24時間営業で次の予約もない）- MAX_EXTENSION_HOURSで制限
-        $maxMinutes = (int) (MAX_EXTENSION_HOURS * 60);
+        // 制限なし（24時間営業で次の予約もない）- 店舗設定の最大延長時間で制限
+        $maxMinutes = (int) ($maxExtensionHours * 60);
         return [
             'available_minutes' => $maxMinutes,
             'reason' => null,
@@ -455,8 +468,8 @@ function calculateAvailableExtension(int $salesAreaId, int $storeId, string $sta
     // 分数を計算
     $availableMinutes = ($diff->days * 24 * 60) + ($diff->h * 60) + $diff->i;
 
-    // MAX_EXTENSION_HOURSで制限
-    $maxMinutes = (int) (MAX_EXTENSION_HOURS * 60);
+    // 店舗設定の最大延長時間で制限
+    $maxMinutes = (int) ($maxExtensionHours * 60);
     $availableMinutes = min($availableMinutes, $maxMinutes);
 
     return [
@@ -468,25 +481,32 @@ function calculateAvailableExtension(int $salesAreaId, int $storeId, string $sta
 }
 
 /**
- * 延長可能な選択肢を取得
+ * 延長可能な選択肢を取得（30分刻みで動的生成）
  *
  * @param int $availableMinutes 延長可能時間（分）
+ * @param float $maxExtensionHours 最大延長時間（時間、店舗設定）
  * @return array 選択可能な延長時間の配列 [['value' => 30, 'label' => '30分'], ...]
  */
-function getExtensionOptions(int $availableMinutes): array
+function getExtensionOptions(int $availableMinutes, float $maxExtensionHours = 0): array
 {
-    $allOptions = [
-        ['value' => 30, 'label' => '30分'],
-        ['value' => 60, 'label' => '1時間'],
-        ['value' => 90, 'label' => '1時間30分'],
-        ['value' => 120, 'label' => '2時間'],
-    ];
+    // maxExtensionHoursが指定されていない場合はavailableMinutesまで
+    $maxMinutes = $maxExtensionHours > 0
+        ? min($availableMinutes, (int) ($maxExtensionHours * 60))
+        : $availableMinutes;
 
     $options = [];
-    foreach ($allOptions as $option) {
-        if ($option['value'] <= $availableMinutes) {
-            $options[] = $option;
+    for ($minutes = 30; $minutes <= $maxMinutes; $minutes += 30) {
+        $hours = $minutes / 60;
+        if ($hours == (int) $hours) {
+            $label = (int) $hours . '時間';
+        } else {
+            $wholeHours = (int) floor($hours);
+            $remainMinutes = $minutes - ($wholeHours * 60);
+            $label = $wholeHours > 0
+                ? $wholeHours . '時間' . $remainMinutes . '分'
+                : $remainMinutes . '分';
         }
+        $options[] = ['value' => $minutes, 'label' => $label];
     }
 
     return $options;

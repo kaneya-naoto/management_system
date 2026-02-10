@@ -158,12 +158,16 @@ require __DIR__ . '/../../includes/public_header.php';
                         $hourlyRate = (int)($area['hourly_rate'] ?? 2500);
                         $capacity = (int)($area['capacity'] ?? 4);
                         $description = $area['description'] ?? '快適なプライベート空間をご用意しております。';
+                        $storeSettings = getStoreSettings((int)$area['store_id']);
                     ?>
                     <label class="room-card" data-area-id="<?= $area['id'] ?>" data-store-id="<?= $area['store_id'] ?>"
                            data-opening-time="<?= h($openingTime) ?>"
                            data-closing-time="<?= h($closingTime) ?>"
                            data-is-24h="<?= $is24hOpen ? '1' : '0' ?>"
-                           data-hourly-rate="<?= $hourlyRate ?>">
+                           data-hourly-rate="<?= $hourlyRate ?>"
+                           data-min-duration="<?= $storeSettings['min_duration_hours'] ?>"
+                           data-max-duration="<?= $storeSettings['max_duration_hours'] ?>"
+                           data-booking-days-ahead="<?= $storeSettings['booking_days_ahead'] ?>">
                         <input type="radio" name="sales_area_radio" value="<?= $area['id'] ?>">
                         <div class="room-card-image">
                             <i class="bi bi-door-open"></i>
@@ -307,6 +311,13 @@ document.addEventListener('DOMContentLoaded', function() {
         is24h: false
     };
 
+    // 現在選択中の店舗設定
+    let currentStoreSettings = {
+        minDuration: <?= MIN_BOOKING_DURATION_HOURS ?>,
+        maxDuration: <?= MAX_BOOKING_DURATION_HOURS ?>,
+        bookingDaysAhead: 30
+    };
+
     // カード選択処理
     roomCards.forEach(card => {
         card.addEventListener('click', function() {
@@ -325,6 +336,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 closingTime: this.dataset.closingTime || '00:00',
                 is24h: this.dataset.is24h === '1'
             };
+
+            // 店舗設定を更新
+            currentStoreSettings = {
+                minDuration: parseInt(this.dataset.minDuration) || <?= MIN_BOOKING_DURATION_HOURS ?>,
+                maxDuration: parseInt(this.dataset.maxDuration) || <?= MAX_BOOKING_DURATION_HOURS ?>,
+                bookingDaysAhead: parseInt(this.dataset.bookingDaysAhead) || 30
+            };
+
+            // 予約日の最大値を店舗設定に合わせて更新（タイムゾーン考慮）
+            const maxDate = new Date();
+            maxDate.setDate(maxDate.getDate() + currentStoreSettings.bookingDaysAhead);
+            const y = maxDate.getFullYear();
+            const m = String(maxDate.getMonth() + 1).padStart(2, '0');
+            const d = String(maxDate.getDate()).padStart(2, '0');
+            reservationDate.max = `${y}-${m}-${d}`;
 
             // 時間選択肢を営業時間に基づいてフィルタリング
             updateTimeOptions();
@@ -420,12 +446,14 @@ document.addEventListener('DOMContentLoaded', function() {
         // 予約時間の計算
         const durationMinutes = endMinutes - startMinutes;
 
-        // 最小1時間、最大8時間
-        if (durationMinutes < 60 || durationMinutes > 8 * 60) {
+        // 店舗設定に基づく利用時間制限
+        const minMinutes = currentStoreSettings.minDuration * 60;
+        const maxMinutes = currentStoreSettings.maxDuration * 60;
+        if (durationMinutes < minMinutes || durationMinutes > maxMinutes) {
             availabilityStatus.style.display = 'block';
             availabilityAlert.className = 'availability-alert error';
             availabilityIcon.className = 'bi bi-exclamation-circle';
-            availabilityMessage.textContent = '予約は1〜8時間の範囲で選択してください';
+            availabilityMessage.textContent = '予約は' + currentStoreSettings.minDuration + '〜' + currentStoreSettings.maxDuration + '時間の範囲で選択してください';
             submitBtn.disabled = true;
             return;
         }

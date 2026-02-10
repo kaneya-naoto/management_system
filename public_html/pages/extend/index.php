@@ -159,7 +159,8 @@ if ($reservation && empty($errors)) {
         $reservation['reservation_date']
     );
 
-    $extensionOptions = getExtensionOptions($extensionInfo['available_minutes']);
+    $extStoreSettings = getStoreSettings((int) $reservation['store_id']);
+    $extensionOptions = getExtensionOptions($extensionInfo['available_minutes'], $extStoreSettings['max_extension_hours']);
 
     // 延長不可の場合
     if (empty($extensionOptions)) {

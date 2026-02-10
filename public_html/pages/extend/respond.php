@@ -92,7 +92,7 @@ if (isPost() && $request) {
                 $newEndTime = date('H:i:s', $newEndTimestamp);
 
                 $currentExtensionPrice = $currentReservation['extension_price'] ?? 0;
-                $additionalPrice = calculateExtensionPrice($extensionMinutes);
+                $additionalPrice = calculateExtensionPrice($extensionMinutes, (int) $currentReservation['store_id']);
                 $newExtensionPrice = $currentExtensionPrice + $additionalPrice;
                 $newTotalPrice = ($currentReservation['base_price'] ?? 0) + $newExtensionPrice;
 
@@ -213,11 +213,16 @@ if (isPost() && $request) {
 }
 
 /**
- * 延長料金を計算
+ * 延長料金を計算（店舗設定のextension_price_per_hourを使用）
  */
-function calculateExtensionPrice(int $minutes): int
+function calculateExtensionPrice(int $minutes, int $storeId = 0): int
 {
-    $ratePerHour = EXTENSION_PRICE_PER_HOUR;
+    if ($storeId > 0) {
+        $storeSettings = getStoreSettings($storeId);
+        $ratePerHour = $storeSettings['extension_price_per_hour'];
+    } else {
+        $ratePerHour = EXTENSION_PRICE_PER_HOUR;
+    }
     return (int) ($ratePerHour * $minutes / 60);
 }
 

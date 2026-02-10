@@ -513,3 +513,44 @@ function getPagedList(string $countQuery, string $selectQuery, array $params, in
         'totalCount' => $totalCount,
     ];
 }
+
+/**
+ * 店舗設定を取得（リクエスト内キャッシュ付き）
+ *
+ * storesテーブルから設定値を取得し、config.php定数をフォールバックとして使用。
+ * フォールバック優先順位:
+ *   清掃時間: 営業区分(nullable) > 店舗設定 > config定数
+ *   その他: 店舗設定 > config定数
+ *
+ * @param int $storeId 店舗ID
+ * @return array 設定値の連想配列
+ */
+function getStoreSettings(int $storeId): array
+{
+    static $cache = [];
+
+    if (isset($cache[$storeId])) {
+        return $cache[$storeId];
+    }
+
+    $store = dbSelectOne(
+        "SELECT default_hourly_rate, max_duration_hours, min_duration_hours,
+                booking_days_ahead, extension_price_per_hour, max_extension_hours,
+                cleaning_time_minutes, base_reward
+         FROM stores WHERE id = ? AND deleted_at IS NULL",
+        [$storeId]
+    );
+
+    $cache[$storeId] = [
+        'default_hourly_rate'     => (int)($store['default_hourly_rate'] ?? DEFAULT_HOURLY_RATE),
+        'max_duration_hours'      => (int)($store['max_duration_hours'] ?? MAX_BOOKING_DURATION_HOURS),
+        'min_duration_hours'      => (int)($store['min_duration_hours'] ?? MIN_BOOKING_DURATION_HOURS),
+        'booking_days_ahead'      => (int)($store['booking_days_ahead'] ?? 30),
+        'extension_price_per_hour' => (int)($store['extension_price_per_hour'] ?? EXTENSION_PRICE_PER_HOUR),
+        'max_extension_hours'     => (float)($store['max_extension_hours'] ?? MAX_EXTENSION_HOURS),
+        'cleaning_time_minutes'   => (int)($store['cleaning_time_minutes'] ?? CLEANING_TIME_MINUTES),
+        'base_reward'             => (int)($store['base_reward'] ?? DEFAULT_CLEANING_REWARD),
+    ];
+
+    return $cache[$storeId];
+}
