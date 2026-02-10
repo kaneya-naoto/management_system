@@ -31,6 +31,10 @@ composer.lock
 *.sqlite
 *.db
 
+# Python
+__pycache__/
+*.py[cod]
+
 # Node modules (if any)
 node_modules/
 package-lock.json

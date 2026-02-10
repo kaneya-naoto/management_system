@@ -427,10 +427,15 @@ if (isPost()) {
             $errors[] = '報酬は' . number_format($maxReward) . '円以下で指定してください';
         } else {
             // 案件の報酬を更新（顧客料金は変更しない: 独立）
-            dbUpdate('cleaning_jobs', ['base_reward' => $baseReward], 'id = ?', [$jobId]);
+            // 楽観ロック: 支払済み・キャンセル済みでないことをWHERE条件で保証
+            $rowCount = dbUpdate('cleaning_jobs', ['base_reward' => $baseReward], 'id = ? AND status NOT IN (?, ?)', [$jobId, 'paid', 'cancelled']);
 
-            flashSuccess('報酬を更新しました');
-            redirect("/jobs/{$jobId}");
+            if ($rowCount === 0) {
+                $errors[] = '他の操作と競合しました。ページを更新して再度お試しください。';
+            } else {
+                flashSuccess('報酬を更新しました');
+                redirect("/jobs/{$jobId}");
+            }
         }
     }
 

@@ -40,6 +40,7 @@ function jobStatusLabel(string $status): array
 {
     return match ($status) {
         'unassigned' => ['label' => '未割当', 'class' => 'secondary'],
+        'recruiting' => ['label' => '募集中', 'class' => 'warning'],
         'assigned' => ['label' => '確定', 'class' => 'primary'],
         'completed' => ['label' => '完了', 'class' => 'success'],
         'paid' => ['label' => '支払済', 'class' => 'info'],

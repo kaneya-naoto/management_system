@@ -19,10 +19,30 @@ if (empty($accessibleStoreIds)) {
 
 $inClause = buildInClause($accessibleStoreIds);
 
-// オーナー一覧を取得（OWNERロール作成時に使用）
-$owners = dbSelect("SELECT id, name FROM owners WHERE deleted_at IS NULL ORDER BY name");
+// 現在のユーザー情報（権限チェック用）
+$currentUser = currentUser();
 
-// ユーザー一覧取得（自分の店舗に紐づくユーザー + OWNERロール）
+// ロール階層レベル（数値が大きいほど上位）
+$roleLevel = ['STORE' => 1, 'OWNER' => 2, 'HQ' => 3];
+
+// オーナー一覧を取得（OWNERロール作成時に使用）
+// OWNERは自分の所属オーナーのみ選択可能
+if ($currentUser['role'] === 'HQ') {
+    $owners = dbSelect("SELECT id, name FROM owners WHERE deleted_at IS NULL ORDER BY name");
+} else {
+    $owners = $currentUser['owner_id']
+        ? dbSelect("SELECT id, name FROM owners WHERE id = ? AND deleted_at IS NULL", [$currentUser['owner_id']])
+        : [];
+}
+
+// OWNERが作成・編集可能なロール
+$allowedRoles = ($currentUser['role'] === 'HQ')
+    ? ['STORE' => '店舗スタッフ', 'OWNER' => 'オーナー']
+    : ['STORE' => '店舗スタッフ'];
+
+// ユーザー一覧取得（自分の店舗に紐づくユーザー）
+// OWNERはHQユーザーを閲覧不可
+$roleFilter = ($currentUser['role'] !== 'HQ') ? "AND u.role != 'HQ'" : '';
 $users = dbSelect(
     "SELECT DISTINCT u.*, s.name as default_store_name, o.name as owner_name
      FROM users u
@@ -31,6 +51,7 @@ $users = dbSelect(
      WHERE (u.store_id IN ({$inClause['placeholders']})
             OR EXISTS (SELECT 1 FROM user_stores us WHERE us.user_id = u.id AND us.store_id IN ({$inClause['placeholders']})))
        AND u.deleted_at IS NULL
+       {$roleFilter}
      ORDER BY u.role, u.name",
     array_merge($inClause['params'], $inClause['params'])
 );
@@ -55,7 +76,6 @@ $errors = [];
 if (isPost()) {
     requireCsrf();
     $action = input('action', '');
-    $currentUser = currentUser();
 
     // 新規ユーザー追加
     if ($action === 'add_user') {
@@ -89,6 +109,12 @@ if (isPost()) {
             $role = 'STORE';
         }
 
+        // OWNERロールの場合、STOREユーザーのみ作成可能
+        if ($currentUser['role'] !== 'HQ' && $role !== 'STORE') {
+            $errors[] = 'この権限では店舗スタッフのみ追加できます';
+            $role = 'STORE';
+        }
+
         // OWNERロールの場合はowner_idが必須
         if ($role === 'OWNER' && $ownerId <= 0) {
             $errors[] = 'OWNERロールの場合は所属オーナーを選択してください';
@@ -100,6 +126,11 @@ if (isPost()) {
             if (!$ownerExists) {
                 $errors[] = '指定されたオーナーが存在しません';
             }
+        }
+
+        // OWNERは自分のowner_id以外を指定不可
+        if ($currentUser['role'] !== 'HQ' && $ownerId > 0 && $ownerId !== (int)$currentUser['owner_id']) {
+            $errors[] = '他のオーナーへのユーザー追加はできません';
         }
 
         if ($storeId > 0 && !in_array($storeId, $accessibleStoreIds)) {
@@ -180,6 +211,12 @@ if (isPost()) {
             $errors[] = 'ユーザーが見つかりません';
         }
 
+        // ロール階層チェック: 自分より上位または同格のロールは編集不可（自分自身は除く）
+        if ($targetUser && $targetUser['id'] !== $currentUser['id']
+            && ($roleLevel[$targetUser['role']] ?? 0) >= ($roleLevel[$currentUser['role']] ?? 0)) {
+            $errors[] = 'この権限のユーザーは編集できません';
+        }
+
         // store_idがアクセス可能な店舗かチェック
         if ($storeId > 0 && !in_array($storeId, $accessibleStoreIds)) {
             $errors[] = '指定された店舗へのアクセス権限がありません';
@@ -199,6 +236,12 @@ if (isPost()) {
             $role = 'STORE';
         }
 
+        // OWNERロールの場合、STOREユーザーのみに変更可能
+        if ($currentUser['role'] !== 'HQ' && $role !== 'STORE') {
+            $errors[] = 'この権限では店舗スタッフのみ設定できます';
+            $role = 'STORE';
+        }
+
         // OWNERロールの場合はowner_idが必須
         if ($role === 'OWNER' && $ownerId <= 0) {
             $errors[] = 'OWNERロールの場合は所属オーナーを選択してください';
@@ -210,6 +253,11 @@ if (isPost()) {
             if (!$ownerExists) {
                 $errors[] = '指定されたオーナーが存在しません';
             }
+        }
+
+        // OWNERは自分のowner_id以外を指定不可
+        if ($currentUser['role'] !== 'HQ' && $ownerId > 0 && $ownerId !== (int)$currentUser['owner_id']) {
+            $errors[] = '他のオーナーへのユーザー移動はできません';
         }
 
         if (!in_array($status, ['active', 'inactive', 'suspended'], true)) {
@@ -253,19 +301,25 @@ if (isPost()) {
     // ユーザー削除
     if ($action === 'delete_user') {
         $userId = (int) input('user_id', 0);
-        $currentUser = currentUser();
 
         if ($userId === $currentUser['id']) {
             $errors[] = '自分自身は削除できません';
         } else {
             // 対象ユーザーがアクセス可能な店舗に属しているか確認（IDOR対策）
             $targetUser = dbSelectOne(
-                "SELECT DISTINCT u.id FROM users u
+                "SELECT DISTINCT u.id, u.role FROM users u
                  WHERE u.id = ? AND u.deleted_at IS NULL
                    AND (u.store_id IN ({$inClause['placeholders']})
                         OR EXISTS (SELECT 1 FROM user_stores us WHERE us.user_id = u.id AND us.store_id IN ({$inClause['placeholders']})))",
                 array_merge([$userId], $inClause['params'], $inClause['params'])
             );
+
+            // ロール階層チェック: 自分より上位または同格のロールは削除不可
+            if ($targetUser && ($roleLevel[$targetUser['role']] ?? 0) >= ($roleLevel[$currentUser['role']] ?? 0)) {
+                $errors[] = 'この権限のユーザーは削除できません';
+                $targetUser = null; // 以降の処理をスキップ
+            }
+
             if ($targetUser) {
                 dbBegin();
                 try {
@@ -294,7 +348,7 @@ if (isPost()) {
 }
 
 $csrfToken = generateCsrfToken();
-$currentUserId = currentUser()['id'];
+$currentUserId = $currentUser['id'];
 
 require __DIR__ . '/../../includes/header.php';
 ?>
@@ -412,8 +466,9 @@ require __DIR__ . '/../../includes/header.php';
                     <div class="mb-3">
                         <label class="form-label">権限</label>
                         <select name="role" id="addUserRole" class="form-select">
-                            <option value="STORE">店舗スタッフ</option>
-                            <option value="OWNER">オーナー</option>
+                            <?php foreach ($allowedRoles as $roleKey => $roleLabel): ?>
+                            <option value="<?= $roleKey ?>"><?= h($roleLabel) ?></option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
                     <div class="mb-3" id="addOwnerGroup" style="display: none;">
@@ -476,8 +531,9 @@ require __DIR__ . '/../../includes/header.php';
                     <div class="mb-3" id="editRoleGroup">
                         <label class="form-label">権限</label>
                         <select name="role" id="editUserRole" class="form-select">
-                            <option value="STORE">店舗スタッフ</option>
-                            <option value="OWNER">オーナー</option>
+                            <?php foreach ($allowedRoles as $roleKey => $roleLabel): ?>
+                            <option value="<?= $roleKey ?>"><?= h($roleLabel) ?></option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
                     <div class="mb-3" id="editOwnerGroup" style="display: none;">

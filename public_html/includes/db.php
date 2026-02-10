@@ -27,6 +27,9 @@ const ALLOWED_TABLES = [
     'notification_logs',
     'email_logs',
     'login_attempts',
+    'daily_notification_logs',
+    'ipass_view_tokens',
+    'webhook_rate_limits',
     // LINE連携
     'line_accounts',
     'line_rich_menus',

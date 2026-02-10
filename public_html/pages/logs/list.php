@@ -18,16 +18,17 @@ if ($user['role'] !== 'HQ') {
     if (empty($accessibleStoreIds)) {
         $ownerUserIds = [$user['id']]; // 店舗なしの場合は自分のログのみ
     } else {
-        // アクセス可能な店舗に紐づくユーザーを取得
+        // アクセス可能な店舗に紐づくユーザーを取得（HQユーザーは除外）
         $inClause = buildInClause($accessibleStoreIds);
         $relatedUsers = dbSelect(
             "SELECT DISTINCT u.id FROM users u
              LEFT JOIN user_stores us ON u.id = us.user_id
              LEFT JOIN owners o ON u.owner_id = o.id
              LEFT JOIN stores s ON o.id = s.owner_id
-             WHERE us.store_id IN ({$inClause['placeholders']})
+             WHERE (us.store_id IN ({$inClause['placeholders']})
                 OR s.id IN ({$inClause['placeholders']})
-                OR u.id = ?",
+                OR u.id = ?)
+               AND u.role != 'HQ'",
             array_merge($inClause['params'], $inClause['params'], [$user['id']])
         );
         $ownerUserIds = array_column($relatedUsers, 'id');
@@ -97,7 +98,7 @@ if ($filterTargetType !== '') {
 // OWNER権限: アクセス可能なユーザーのログのみ
 if ($ownerUserIds !== null) {
     $ownerInClause = buildInClause($ownerUserIds);
-    $whereConditions[] = "(al.user_id IN ({$ownerInClause['placeholders']}) OR al.user_id IS NULL)";
+    $whereConditions[] = "al.user_id IN ({$ownerInClause['placeholders']})";
     $params = array_merge($params, $ownerInClause['params']);
 }
 
@@ -126,8 +127,16 @@ $logs = dbSelectPaginated(
     $pagination['offset']
 );
 
-// ユーザー一覧（フィルタ用）
-$users = dbSelect("SELECT id, name FROM users WHERE deleted_at IS NULL ORDER BY name");
+// ユーザー一覧（フィルタ用）— OWNERはスコープ内のユーザーのみ
+if ($ownerUserIds !== null) {
+    $filterUserInClause = buildInClause($ownerUserIds);
+    $filterUsers = dbSelect(
+        "SELECT id, name FROM users WHERE id IN ({$filterUserInClause['placeholders']}) AND deleted_at IS NULL ORDER BY name",
+        $filterUserInClause['params']
+    );
+} else {
+    $filterUsers = dbSelect("SELECT id, name FROM users WHERE deleted_at IS NULL ORDER BY name");
+}
 
 // アクション種別
 $actionTypes = [
@@ -175,10 +184,12 @@ require __DIR__ . '/../../includes/header.php';
                 <label class="form-label">操作者</label>
                 <select name="user_id" class="form-select">
                     <option value="">すべて</option>
+                    <?php if ($ownerUserIds === null): ?>
                     <option value="-1" <?= $filterUserId === -1 ? 'selected' : '' ?>>システム</option>
-                    <?php foreach ($users as $user): ?>
-                    <option value="<?= $user['id'] ?>" <?= $filterUserId === (int)$user['id'] ? 'selected' : '' ?>>
-                        <?= h($user['name']) ?>
+                    <?php endif; ?>
+                    <?php foreach ($filterUsers as $fu): ?>
+                    <option value="<?= $fu['id'] ?>" <?= $filterUserId === (int)$fu['id'] ? 'selected' : '' ?>>
+                        <?= h($fu['name']) ?>
                     </option>
                     <?php endforeach; ?>
                 </select>

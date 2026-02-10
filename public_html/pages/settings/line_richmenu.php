@@ -9,10 +9,8 @@ require_once __DIR__ . '/../../includes/line_helpers.php';
 requireLogin();
 $user = currentUser();
 
-if ($user['role'] !== 'OWNER' && $user['role'] !== 'HQ') {
-    flashError('この機能はオーナーまたはHQ権限が必要です');
-    redirect('/settings');
-}
+// OWNER権限チェック
+requireRole('OWNER');
 
 $accountId = (int)($_GET['account_id'] ?? 0);
 if (!$accountId) {
@@ -32,14 +30,10 @@ if (!$lineAccount) {
     redirect('/settings/line');
 }
 
-// IDOR対策
+// IDOR対策: 標準の認可パターンを使用
 if ($user['role'] !== 'HQ') {
-    $ownedStores = dbSelect(
-        "SELECT s.id FROM stores s INNER JOIN owners o ON s.owner_id = o.id
-         WHERE o.user_id = ? AND s.is_active = 1 AND s.deleted_at IS NULL",
-        [$user['id']]
-    );
-    $ownedStoreIds = array_column($ownedStores, 'id');
+    $storeAccess = getAccessibleStoreIds();
+    $ownedStoreIds = $storeAccess['ids'];
     if ($lineAccount['account_type'] === 'store' && $lineAccount['store_id'] && !in_array($lineAccount['store_id'], $ownedStoreIds)) {
         flashError('アクセス権限がありません');
         redirect('/settings/line');

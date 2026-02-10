@@ -290,36 +290,40 @@ CREATE TABLE IF NOT EXISTS cleaner_payments (
 CREATE TABLE IF NOT EXISTS audit_logs (
   id BIGINT NOT NULL AUTO_INCREMENT,
   user_id BIGINT NULL COMMENT 'ユーザーID',
-  action VARCHAR(50) NOT NULL COMMENT 'アクション',
+  action VARCHAR(100) NOT NULL COMMENT 'アクション',
   target_type VARCHAR(50) NOT NULL COMMENT '対象テーブル',
   target_id BIGINT NULL COMMENT '対象ID',
-  old_values JSON NULL COMMENT '変更前の値',
-  new_values JSON NULL COMMENT '変更後の値',
+  old_value JSON NULL COMMENT '変更前の値',
+  new_value JSON NULL COMMENT '変更後の値',
   ip_address VARCHAR(45) NULL COMMENT 'IPアドレス',
   user_agent TEXT NULL COMMENT 'ユーザーエージェント',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  KEY idx_audit_logs_user (user_id),
-  KEY idx_audit_logs_target (target_type, target_id),
-  KEY idx_audit_logs_created (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='操作ログ';
+  KEY idx_audit_user (user_id),
+  KEY idx_audit_action (action),
+  KEY idx_audit_target (target_type, target_id),
+  KEY idx_audit_created (created_at),
+  CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='操作ログ';
 
--- 通知履歴（LINE）
+-- 通知履歴（LINE通知・応募記録用）
 CREATE TABLE IF NOT EXISTS notification_logs (
   id BIGINT NOT NULL AUTO_INCREMENT,
-  cleaner_id BIGINT NULL COMMENT '清掃者ID',
-  job_id BIGINT NULL COMMENT '案件ID',
-  type ENUM('job_offer', 'job_assigned', 'extension_request', 'payment_complete', 'other') NOT NULL COMMENT '通知種別',
-  message TEXT NOT NULL COMMENT '通知内容',
+  cleaner_id BIGINT NOT NULL COMMENT '清掃者ID',
+  job_id BIGINT NOT NULL COMMENT '案件ID',
+  type ENUM('normal', 'urgent', 'fixed', 'confirmed', 'extension', 'cancel') NOT NULL DEFAULT 'normal' COMMENT '通知種別',
+  message_id VARCHAR(255) NULL COMMENT 'LINE Message ID',
   sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '送信日時',
-  status ENUM('sent', 'failed', 'pending') NOT NULL DEFAULT 'sent' COMMENT '送信状態',
-  error_message TEXT NULL COMMENT 'エラーメッセージ',
+  response ENUM('ok', 'ng', 'timeout', 'none', 'pending') NULL DEFAULT 'pending' COMMENT '応答状態',
+  responded_at DATETIME NULL COMMENT '応答日時',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  KEY idx_notification_logs_cleaner (cleaner_id),
-  KEY idx_notification_logs_job (job_id),
-  KEY idx_notification_logs_sent (sent_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='通知履歴';
+  KEY idx_notification_job (job_id),
+  KEY idx_notification_cleaner (cleaner_id),
+  KEY idx_notification_type (type),
+  FOREIGN KEY (cleaner_id) REFERENCES cleaners(id),
+  FOREIGN KEY (job_id) REFERENCES cleaning_jobs(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='通知履歴';
 
 -- メール送信履歴
 CREATE TABLE IF NOT EXISTS email_logs (

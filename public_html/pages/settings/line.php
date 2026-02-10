@@ -10,25 +10,26 @@ requireLogin();
 $user = currentUser();
 
 // OWNER権限チェック
-if ($user['role'] !== 'OWNER' && $user['role'] !== 'HQ') {
-    flashError('この機能はオーナーまたはHQ権限が必要です');
-    redirect('/settings');
-}
+requireRole('OWNER');
 
-// 店舗一覧取得（OWNER: 自分の店舗のみ、HQ: 全店舗）
+// 店舗一覧取得（標準の認可パターンを使用）
 if ($user['role'] === 'HQ') {
     $stores = dbSelect(
         "SELECT * FROM stores WHERE is_active = 1 AND deleted_at IS NULL ORDER BY name"
     );
 } else {
-    // OWNERの店舗を取得
-    $stores = dbSelect(
-        "SELECT s.* FROM stores s
-         INNER JOIN owners o ON s.owner_id = o.id
-         WHERE o.user_id = ? AND s.is_active = 1 AND s.deleted_at IS NULL
-         ORDER BY s.name",
-        [$user['id']]
-    );
+    // OWNER: getAccessibleStoreIds() で自オーナー配下店舗を取得
+    $storeAccess = getAccessibleStoreIds();
+    if (!empty($storeAccess['ids'])) {
+        $placeholders = implode(',', array_fill(0, count($storeAccess['ids']), '?'));
+        $stores = dbSelect(
+            "SELECT * FROM stores WHERE id IN ({$placeholders})
+             AND is_active = 1 AND deleted_at IS NULL ORDER BY name",
+            $storeAccess['ids']
+        );
+    } else {
+        $stores = [];
+    }
 }
 
 // LINE設定一覧取得（OWNERは自分の店舗のみ、HQは全て）

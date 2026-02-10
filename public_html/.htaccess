@@ -20,7 +20,7 @@ RewriteRule ^(.*)$ index.php [QSA,L]
     Header set X-Frame-Options "SAMEORIGIN"
     Header set X-XSS-Protection "1; mode=block"
     Header set Referrer-Policy "strict-origin-when-cross-origin"
-    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://static.line-scdn.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; img-src 'self' data: https://profile.line-scdn.net; connect-src 'self' https://cdn.jsdelivr.net https://api.line.me https://liff.line.me; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://static.line-scdn.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net data:; img-src 'self' data: https://profile.line-scdn.net; connect-src 'self' https://cdn.jsdelivr.net https://api.line.me https://liff.line.me; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
 </IfModule>
 
 # includes ディレクトリへの直接アクセス禁止

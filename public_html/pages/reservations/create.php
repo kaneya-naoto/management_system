@@ -85,14 +85,29 @@ if (isPost()) {
 
     // 深夜営業対応: 終了時間 < 開始時間の場合は翌日扱いとして許可
     if (!empty($startTime) && !empty($endTime) && preg_match($timePattern, $startTime) && preg_match($timePattern, $endTime)) {
-        // 同日の場合のみ開始 < 終了をチェック（深夜跨ぎは許可）
         if ($startTime >= $endTime && $endTime !== '00:00') {
-            // 深夜跨ぎでない場合（例: 14:00-12:00は不正、22:00-02:00は深夜跨ぎでOK）
-            $startHour = (int) substr($startTime, 0, 2);
-            $endHour = (int) substr($endTime, 0, 2);
-            // 開始が18時以降で終了が6時以前なら深夜跨ぎとして許可
-            if (!($startHour >= 18 && $endHour <= 6)) {
-                $errors[] = '終了時間は開始時間より後にしてください（深夜跨ぎの場合は18時以降開始、6時以前終了に限ります）';
+            // 日跨ぎ予約の場合、店舗の営業時間を確認して判定
+            $allowMidnightCrossing = false;
+            if ($selectedArea) {
+                $storeHours = dbSelectOne(
+                    "SELECT opening_time, closing_time, is_24h_open FROM stores WHERE id = ?",
+                    [$selectedArea['store_id']]
+                );
+                if ($storeHours) {
+                    if ($storeHours['is_24h_open']) {
+                        $allowMidnightCrossing = true;
+                    } else {
+                        $storeClose = substr($storeHours['closing_time'], 0, 5);
+                        $storeOpen = substr($storeHours['opening_time'], 0, 5);
+                        // 店舗の営業時間が日跨ぎ（closing < opening、例: 18:00-05:00）なら許可
+                        if ($storeClose < $storeOpen || $storeClose === '00:00') {
+                            $allowMidnightCrossing = true;
+                        }
+                    }
+                }
+            }
+            if (!$allowMidnightCrossing) {
+                $errors[] = '終了時間は開始時間より後にしてください（この店舗では深夜跨ぎの予約はできません）';
             }
         }
     }
