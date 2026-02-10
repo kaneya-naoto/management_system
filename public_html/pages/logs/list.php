@@ -77,8 +77,8 @@ $params[] = $filterDateFrom;
 $whereConditions[] = "DATE(al.created_at) <= ?";
 $params[] = $filterDateTo;
 
-if ($filterUserId === -1) {
-    // システム（user_id = NULL）
+if ($filterUserId === -1 && $ownerUserIds === null) {
+    // システム（user_id = NULL）— HQのみ使用可能
     $whereConditions[] = "al.user_id IS NULL";
 } elseif ($filterUserId > 0) {
     $whereConditions[] = "al.user_id = ?";

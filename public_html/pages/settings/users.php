@@ -211,21 +211,23 @@ if (isPost()) {
             $errors[] = 'ユーザーが見つかりません';
         }
 
-        // ロール階層チェック: 自分より上位または同格のロールは編集不可（自分自身は除く）
-        if ($targetUser && $targetUser['id'] !== $currentUser['id']
-            && ($roleLevel[$targetUser['role']] ?? 0) >= ($roleLevel[$currentUser['role']] ?? 0)) {
-            $errors[] = 'この権限のユーザーは編集できません';
+        if ($targetUser) {
+            // ロール階層チェック: 自分より上位または同格のロールは編集不可（自分自身は除く）
+            if ($targetUser['id'] !== $currentUser['id']
+                && ($roleLevel[$targetUser['role']] ?? 0) >= ($roleLevel[$currentUser['role']] ?? 0)) {
+                $errors[] = 'この権限のユーザーは編集できません';
+            }
+
+            // 自分自身のロール・ステータスは変更不可
+            if ($targetUser['id'] === $currentUser['id']) {
+                $role = $targetUser['role'];
+                $status = $targetUser['status'];
+            }
         }
 
         // store_idがアクセス可能な店舗かチェック
         if ($storeId > 0 && !in_array($storeId, $accessibleStoreIds)) {
             $errors[] = '指定された店舗へのアクセス権限がありません';
-        }
-
-        // 自分自身のロール・ステータスは変更不可
-        if ($targetUser && $targetUser['id'] === $currentUser['id']) {
-            $role = $targetUser['role'];
-            $status = $targetUser['status'];
         }
 
         if (empty($name)) {

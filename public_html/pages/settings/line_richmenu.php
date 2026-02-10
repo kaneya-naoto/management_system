@@ -6,11 +6,9 @@ $pageTitle = 'リッチメニュー設定';
 
 require_once __DIR__ . '/../../includes/line_helpers.php';
 
-requireLogin();
-$user = currentUser();
-
-// OWNER権限チェック
+// OWNER権限チェック（内部でrequireLogin()も実施される）
 requireRole('OWNER');
+$user = currentUser();
 
 $accountId = (int)($_GET['account_id'] ?? 0);
 if (!$accountId) {

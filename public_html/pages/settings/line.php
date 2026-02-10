@@ -6,11 +6,9 @@ $pageTitle = 'LINE連携設定';
 
 require_once __DIR__ . '/../../includes/line_helpers.php';
 
-requireLogin();
-$user = currentUser();
-
-// OWNER権限チェック
+// OWNER権限チェック（内部でrequireLogin()も実施される）
 requireRole('OWNER');
+$user = currentUser();
 
 // 店舗一覧取得（標準の認可パターンを使用）
 if ($user['role'] === 'HQ') {
