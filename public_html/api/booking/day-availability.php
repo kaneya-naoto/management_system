@@ -5,7 +5,7 @@
  * GET /api/booking/day-availability?sales_area_id=X&date=YYYY-MM-DD
  *
  * 営業時間内の全30分スロットの空き状況を一括で返す。
- * パフォーマンス最適化: 2クエリ（鍵数+予約一括）で全スロットを計算。
+ * パフォーマンス最適化: 1クエリ（予約一括）で全スロットを計算。
  */
 
 // 共通ファイル読み込み
@@ -46,8 +46,13 @@ if (!$dateObj || $dateObj->format('Y-m-d') !== $date) {
     jsonErrorResponse('Invalid date');
 }
 
+// リクエスト処理中の時刻を固定（date()の複数呼び出しによるレースコンディション防止）
+$now = new DateTime();
+$today = $now->format('Y-m-d');
+$nowMinutesFixed = (int)$now->format('H') * 60 + (int)$now->format('i');
+
 // 過去日チェック
-if ($date < date('Y-m-d')) {
+if ($date < $today) {
     jsonErrorResponse('Past date');
 }
 
@@ -79,26 +84,29 @@ $is24h = (bool)$salesArea['is_24h_open'];
 
 $slotTimes = generateBusinessSlots($openingTime, $closingTime, $is24h);
 
-// === 鍵総数取得（1クエリ目） ===
-$totalKeysResult = dbSelectOne(
-    "SELECT COUNT(*) as cnt FROM `keys`
-     WHERE sales_area_id = ? AND is_active = 1 AND deleted_at IS NULL",
-    [$salesAreaId]
-);
-$totalKeys = (int)($totalKeysResult['cnt'] ?? 0);
+// === next_dayフラグ算出（midnight境界以降を翌日扱い） ===
+$isNextDay = false;
+$prevSlotMin = -1;
+$nextDayFlags = [];
+foreach ($slotTimes as $slotTime) {
+    $slotMin = timeToMinutes($slotTime);
+    if ($prevSlotMin >= 0 && $slotMin < $prevSlotMin) {
+        $isNextDay = true; // midnight境界を超えた
+    }
+    $nextDayFlags[$slotTime] = $isNextDay;
+    $prevSlotMin = $slotMin;
+}
 
-// === 全予約を一括取得（2クエリ目） ===
+// === 全予約を一括取得 ===
 $cleaningMinutes = (int)($salesArea['cleaning_duration_minutes'] ?? CLEANING_TIME_MINUTES);
 
 $prevDate = date('Y-m-d', strtotime($date . ' -1 day'));
 $nextDate = date('Y-m-d', strtotime($date . ' +1 day'));
 
 $reservations = dbSelect(
-    "SELECT r.reservation_date, r.start_time, r.end_time,
-            ka.key_id,
+    "SELECT r.id as reservation_id, r.reservation_date, r.start_time, r.end_time,
             cj.completed_at
      FROM reservations r
-     JOIN key_assignments ka ON ka.reservation_id = r.id
      LEFT JOIN cleaning_jobs cj ON cj.reservation_id = r.id
      WHERE r.sales_area_id = ?
        AND r.reservation_date IN (?, ?, ?)
@@ -128,15 +136,14 @@ foreach ($reservations as $r) {
     }
 
     $blockIntervals[] = [
-        'key_id' => (int)$r['key_id'],
         'start' => $blockStart,
         'end' => $blockEnd,
     ];
 }
 
 // === 各スロットの空き状況を計算 ===
-$isToday = ($date === date('Y-m-d'));
-$nowMinutes = $isToday ? ((int)date('H') * 60 + (int)date('i')) : 0;
+$isToday = ($date === $today);
+$nowMinutes = $isToday ? $nowMinutesFixed : 0;
 
 // 深夜営業判定: closingTime < openingTime
 $openMin = timeToMinutes($openingTime);
@@ -148,57 +155,61 @@ foreach ($slotTimes as $slotTime) {
     $slotMin = timeToMinutes($slotTime);
 
     // 当日の過去時間チェック
-    // 深夜営業で00:00以降のスロットは翌日扱いなので常にpastではない
-    if ($isToday && !$isOvernight && $slotMin < $nowMinutes) {
-        $slots[] = [
-            'time' => $slotTime,
-            'available_keys' => 0,
-            'status' => 'past',
-        ];
-        continue;
-    }
-    // 深夜営業の当日: 開始時間以降〜23:59のうち過去のもの
-    if ($isToday && $isOvernight && $slotMin >= $openMin && $slotMin < $nowMinutes) {
-        $slots[] = [
-            'time' => $slotTime,
-            'available_keys' => 0,
-            'status' => 'past',
-        ];
-        continue;
+    // next_dayフラグがtrueのスロットは翌日扱いなのでpast判定スキップ
+    if ($isToday && !$nextDayFlags[$slotTime]) {
+        if (!$isOvernight && $slotMin < $nowMinutes) {
+            $slots[] = [
+                'time' => $slotTime,
+                'status' => 'past',
+                'next_day' => false,
+            ];
+            continue;
+        }
+        // 深夜営業の当日: 開始時間以降〜23:59のうち過去のもの
+        if ($isOvernight && $slotMin >= $openMin && $slotMin < $nowMinutes) {
+            $slots[] = [
+                'time' => $slotTime,
+                'status' => 'past',
+                'next_day' => false,
+            ];
+            continue;
+        }
     }
 
     // スロットのDateTimeを構築
     $slotStart = new DateTime($date . ' ' . $slotTime);
-    // 深夜営業で00:00以降のスロットは翌日
-    if ($isOvernight && $slotMin < $openMin) {
+    // next_dayフラグがtrueのスロットは翌日（24h・深夜営業の両方で動作）
+    if ($nextDayFlags[$slotTime]) {
         $slotStart->modify('+1 day');
     }
     $slotEnd = clone $slotStart;
     $slotEnd->modify('+30 minutes');
 
-    // このスロットと衝突する鍵を数える
-    $conflictingKeys = [];
+    // このスロットと衝突する予約があるか判定
+    $hasConflict = false;
     foreach ($blockIntervals as $block) {
         // 区間の重なり判定: NOT (block_end <= slot_start OR block_start >= slot_end)
         if (!($block['end'] <= $slotStart || $block['start'] >= $slotEnd)) {
-            $conflictingKeys[$block['key_id']] = true;
+            $hasConflict = true;
+            break;
         }
     }
 
-    $availableKeys = max(0, $totalKeys - count($conflictingKeys));
     $slots[] = [
         'time' => $slotTime,
-        'available_keys' => $availableKeys,
-        'status' => $availableKeys > 0 ? 'available' : 'full',
+        'status' => $hasConflict ? 'full' : 'available',
+        'next_day' => $nextDayFlags[$slotTime],
     ];
 }
 
-// Cache-Control: 短いキャッシュ（空き状況は変動する）
-header('Cache-Control: public, max-age=30');
+// Cache-Control: 空き状況は頻繁に変動するためキャッシュしない
+// (ブラウザ/プロキシ/CDN のキャッシュによって「常に○」のような表示差が出るのを避ける)
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
 
 jsonResponse([
     'slots' => $slots,
-    'total_keys' => $totalKeys,
 ]);
 
 // === ヘルパー関数 ===
@@ -209,8 +220,14 @@ jsonResponse([
 function generateBusinessSlots(string $openingTime, string $closingTime, bool $is24h): array
 {
     if ($is24h) {
+        $openMin = timeToMinutes($openingTime);
+        // opening_time=00:00 の場合、midnight wrapが発生しないため06:00にフォールバック
+        if ($openMin === 0) {
+            $openMin = 360;
+        }
         $slots = [];
-        for ($m = 0; $m < 1440; $m += 30) {
+        for ($i = 0; $i < 48; $i++) {
+            $m = ($openMin + $i * 30) % 1440;
             $slots[] = sprintf('%02d:%02d', intdiv($m, 60), $m % 60);
         }
         return $slots;

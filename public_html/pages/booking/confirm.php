@@ -50,8 +50,14 @@ if (!empty($errors)) {
     foreach ($errors as $error) {
         flashError($error);
     }
-    // customer.phpはPOST専用のため、エラー時はステップ1（日時選択）に戻す
-    redirect($bookingBasePath);
+    // 入力データをセッションに保存してcustomerページに戻す（データ保持）
+    $_SESSION['customer_input'] = [
+        'customer_name' => $customerName,
+        'customer_email' => $customerEmail,
+        'customer_phone' => $customerPhone,
+        'num_people' => $numPeople,
+    ];
+    redirect($bookingBasePath . '/customer');
 }
 
 // セッション時刻データ検証
@@ -103,7 +109,13 @@ if ((int)$salesArea['store_id'] !== (int)$booking['store_id']) {
 $capacity = (int)($salesArea['capacity'] ?? 0);
 if ($capacity > 0 && $numPeople > $capacity) {
     flashError("この部屋の定員は{$capacity}名です。人数を変更してください。");
-    redirect($bookingBasePath);
+    $_SESSION['customer_input'] = [
+        'customer_name' => $customerName,
+        'customer_email' => $customerEmail,
+        'customer_phone' => $customerPhone,
+        'num_people' => $numPeople,
+    ];
+    redirect($bookingBasePath . '/customer');
 }
 
 $pricePerHour = (int)($salesArea['hourly_rate'] ?? $storeSettings['default_hourly_rate']);
@@ -157,7 +169,7 @@ require __DIR__ . '/../../includes/public_header.php';
             <h6 class="border-bottom pb-2 mb-3"><i class="bi bi-building me-2"></i>ご利用内容</h6>
             <table class="table table-borderless">
                 <tr>
-                    <th class="text-muted" style="width: 30%">店舗</th>
+                    <th class="text-muted" >店舗</th>
                     <td><?= h($booking['store_name']) ?> - <?= h($booking['area_name']) ?></td>
                 </tr>
                 <tr>
@@ -176,7 +188,7 @@ require __DIR__ . '/../../includes/public_header.php';
             <h6 class="border-bottom pb-2 mb-3 mt-4"><i class="bi bi-person me-2"></i>お客様情報</h6>
             <table class="table table-borderless">
                 <tr>
-                    <th class="text-muted" style="width: 30%">お名前</th>
+                    <th class="text-muted" >お名前</th>
                     <td><?= h($customerName) ?></td>
                 </tr>
                 <tr>

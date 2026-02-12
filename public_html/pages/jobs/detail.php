@@ -43,7 +43,7 @@ if ($job['reservation_id']) {
 // 応募者一覧
 $applications = dbSelect(
     "SELECT ja.*, c.name as cleaner_name, c.phone as cleaner_phone, c.ipass_code,
-     (SELECT COUNT(*) FROM cleaning_jobs cj2 WHERE cj2.assigned_cleaner_id = c.id AND cj2.status = 'completed') as completed_count
+     (SELECT COUNT(*) FROM cleaning_jobs cj2 WHERE cj2.assigned_cleaner_id = c.id AND cj2.status IN ('completed', 'paid')) as completed_count
      FROM job_applications ja
      INNER JOIN cleaners c ON ja.cleaner_id = c.id
      WHERE ja.job_id = ?
@@ -80,52 +80,99 @@ if (isPost()) {
         $newStatus = input('status', '');
         $allowedStatuses = ['unassigned', 'recruiting', 'assigned', 'completed', 'paid'];
 
+        // 状態遷移マップ: 現在のステータス → 許可される遷移先
+        // assigned への遷移は assign_cleaner / accept_application アクション経由のみ
+        $transitionMap = [
+            'unassigned' => ['recruiting'],
+            'recruiting' => ['unassigned'],
+            'assigned'   => ['unassigned', 'recruiting', 'completed'],
+            'completed'  => ['paid'],
+            'paid'       => [],
+        ];
+
         if (!in_array($newStatus, $allowedStatuses, true)) {
             $errors[] = '不正なステータスです';
         } else {
-            // 状態遷移ルール: 支払済からは変更不可
             $currentJob = dbSelectOne(
-                "SELECT status FROM cleaning_jobs WHERE id = ? AND deleted_at IS NULL",
+                "SELECT status, assigned_cleaner_id FROM cleaning_jobs WHERE id = ? AND deleted_at IS NULL",
                 [$jobId]
             );
 
             if (!$currentJob) {
                 $errors[] = '案件が見つかりません';
-            } elseif ($currentJob['status'] === 'paid' && $newStatus !== 'paid') {
-                $errors[] = '支払済の案件はステータス変更できません';
+            } elseif ($currentJob['status'] === $newStatus) {
+                // 同じステータスへの変更は何もしない
+                flashSuccess('ステータスは変更されていません');
+                redirect("/jobs/{$jobId}");
             } else {
-                // 楽観ロック: 現在のステータスを条件に含める
-                $rowCount = dbUpdate(
-                    'cleaning_jobs',
-                    ['status' => $newStatus],
-                    'id = ? AND status = ?',
-                    [$jobId, $currentJob['status']]
-                );
-
-                if ($rowCount === 0) {
-                    $errors[] = '他の操作と競合しました。ページを更新して再度お試しください。';
+                // 遷移ルールチェック
+                $allowedTransitions = $transitionMap[$currentJob['status']] ?? [];
+                if (!in_array($newStatus, $allowedTransitions, true)) {
+                    $errors[] = statusLabel($currentJob['status'], 'job') . 'から' . statusLabel($newStatus, 'job') . 'への変更はできません';
+                } elseif ($newStatus === 'completed' && empty($currentJob['assigned_cleaner_id'])) {
+                    // 完了には担当者が必要
+                    $errors[] = '担当者が割り当てられていない案件は完了にできません';
                 } else {
-                    // 監査ログ記録
-                    logAudit(
-                        'update_status',
-                        'cleaning_job',
-                        $jobId,
-                        ['status' => $currentJob['status']],
-                        ['status' => $newStatus]
-                    );
-
-                    // 完了時に支払いレコードを自動生成
+                    // 更新データ
+                    $updateData = ['status' => $newStatus];
                     if ($newStatus === 'completed') {
-                        $paymentId = createPaymentForJob($jobId);
-                        if ($paymentId) {
-                            flashSuccess('ステータスを完了に更新し、支払いレコードを作成しました');
+                        $updateData['completed_at'] = date('Y-m-d H:i:s');
+                    }
+                    // assigned→unassigned/recruiting: 担当者をクリア（整合性維持）
+                    if (in_array($newStatus, ['unassigned', 'recruiting'], true) && $currentJob['assigned_cleaner_id']) {
+                        $updateData['assigned_cleaner_id'] = null;
+                    }
+
+                    // 完了処理はトランザクションで支払い作成とアトミックに実行
+                    $needsTx = ($newStatus === 'completed');
+                    if ($needsTx) { dbBegin(); }
+                    try {
+                        // 楽観ロック: 現在のステータスを条件に含める
+                        $rowCount = dbUpdate(
+                            'cleaning_jobs',
+                            $updateData,
+                            'id = ? AND status = ?',
+                            [$jobId, $currentJob['status']]
+                        );
+
+                        if ($rowCount === 0) {
+                            throw new RuntimeException('競合');
+                        }
+
+                        // 監査ログ記録
+                        logAudit(
+                            'update_status',
+                            'cleaning_job',
+                            $jobId,
+                            ['status' => $currentJob['status']],
+                            ['status' => $newStatus]
+                        );
+
+                        // 完了時に支払いレコードを自動生成（同一トランザクション内）
+                        if ($newStatus === 'completed') {
+                            $paymentId = createPaymentForJob($jobId, false);
+                            if ($needsTx) { dbCommit(); }
+                            if ($paymentId) {
+                                flashSuccess('ステータスを完了に更新し、支払いレコードを作成しました');
+                            } else {
+                                flashSuccess('ステータスを更新しました');
+                            }
+                        } elseif ($newStatus === 'paid') {
+                            // 手動で支払済にする場合、支払いレコードも連動更新
+                            dbUpdate('cleaner_payments',
+                                ['status' => 'paid', 'paid_at' => date('Y-m-d'), 'paid_by' => getCurrentUserId()],
+                                'job_id = ? AND status = ?',
+                                [$jobId, 'pending']
+                            );
+                            flashSuccess('ステータスを支払済に更新しました');
                         } else {
                             flashSuccess('ステータスを更新しました');
                         }
-                    } else {
-                        flashSuccess('ステータスを更新しました');
+                        redirect("/jobs/{$jobId}");
+                    } catch (Exception $e) {
+                        if ($needsTx) { dbRollback(); }
+                        $errors[] = '他の操作と競合しました。ページを更新して再度お試しください。';
                     }
-                    redirect("/jobs/{$jobId}");
                 }
             }
         }
@@ -140,7 +187,7 @@ if (isPost()) {
         } else {
             // 案件が完了/支払済でないことを確認
             $currentJob = dbSelectOne(
-                "SELECT status FROM cleaning_jobs WHERE id = ? AND deleted_at IS NULL",
+                "SELECT status, assigned_cleaner_id FROM cleaning_jobs WHERE id = ? AND deleted_at IS NULL",
                 [$jobId]
             );
 
@@ -160,26 +207,41 @@ if (isPost()) {
                 if (!$cleaner) {
                     $errors[] = '選択された清掃者はこの店舗に対応していないか、無効です';
                 } else {
-                    // 楽観ロック: 完了/支払済でない場合のみ更新
-                    $rowCount = dbUpdate('cleaning_jobs', [
-                        'assigned_cleaner_id' => $cleanerId,
-                        'status' => 'assigned',
-                    ], 'id = ? AND status NOT IN (?, ?)', [$jobId, 'completed', 'paid']);
+                    // トランザクションで一括処理（担当割当 + 応募却下 + 監査ログ）
+                    dbBegin();
+                    try {
+                        // 楽観ロック: 完了/支払済でない場合のみ更新
+                        $rowCount = dbUpdate('cleaning_jobs', [
+                            'assigned_cleaner_id' => $cleanerId,
+                            'status' => 'assigned',
+                        ], 'id = ? AND status NOT IN (?, ?)', [$jobId, 'completed', 'paid']);
 
-                    if ($rowCount === 0) {
-                        $errors[] = '他の操作と競合しました。ページを更新して再度お試しください。';
-                    } else {
+                        if ($rowCount === 0) {
+                            throw new RuntimeException('競合');
+                        }
+
+                        // 既存の応募を却下（applied/accepted両方、整合性維持）
+                        dbUpdate('job_applications',
+                            ['status' => 'rejected'],
+                            'job_id = ? AND status IN (?, ?)',
+                            [$jobId, 'applied', 'accepted']
+                        );
+
                         // 監査ログ記録
                         logAudit(
                             'assign_cleaner',
                             'cleaning_job',
                             $jobId,
-                            ['assigned_cleaner_id' => null, 'status' => $currentJob['status']],
+                            ['assigned_cleaner_id' => $currentJob['assigned_cleaner_id'], 'status' => $currentJob['status']],
                             ['assigned_cleaner_id' => $cleanerId, 'status' => 'assigned']
                         );
 
+                        dbCommit();
                         flashSuccess('担当者を割り当てました');
                         redirect("/jobs/{$jobId}");
+                    } catch (Exception $e) {
+                        dbRollback();
+                        $errors[] = '他の操作と競合しました。ページを更新して再度お試しください。';
                     }
                 }
             }
@@ -197,6 +259,8 @@ if (isPost()) {
 
         if (!$application) {
             $errors[] = '応募が見つかりません';
+        } elseif ($application['status'] !== 'applied') {
+            $errors[] = 'この応募は既に処理済みです（ステータス: ' . h($application['status']) . '）';
         } else {
             // 案件が募集中であることを確認（レースコンディション対策）
             $currentJob = dbSelectOne(
@@ -211,10 +275,12 @@ if (isPost()) {
             } elseif ($currentJob['assigned_cleaner_id']) {
                 $errors[] = 'すでに担当者が割り当てられています';
             } else {
-                // 応募者が有効か確認
+                // 応募者が有効で、この店舗に対応しているか確認
                 $applicantCleaner = dbSelectOne(
-                    "SELECT id FROM cleaners WHERE id = ? AND is_active = 1 AND deleted_at IS NULL",
-                    [$application['cleaner_id']]
+                    "SELECT c.id FROM cleaners c
+                     INNER JOIN cleaner_stores cs ON c.id = cs.cleaner_id
+                     WHERE c.id = ? AND cs.store_id = ? AND c.is_active = 1 AND c.deleted_at IS NULL",
+                    [$application['cleaner_id'], $job['store_id']]
                 );
 
                 if (!$applicantCleaner) {
@@ -234,7 +300,7 @@ if (isPost()) {
                             throw new RuntimeException('Job status changed by another operation');
                         }
 
-                        dbUpdate('job_applications', ['status' => 'accepted'], 'id = ?', [$applicationId]);
+                        dbUpdate('job_applications', ['status' => 'accepted'], 'id = ? AND status = ?', [$applicationId, 'applied']);
 
                         // 他の応募を却下
                         dbUpdate('job_applications',
@@ -320,13 +386,19 @@ if (isPost()) {
             $notificationType = ($fixedCount['cnt'] > 0) ? 'fixed' : 'normal';
             $sentCount = sendJobNotifications($jobId, $notificationType);
 
+            // 固定者通知が0件の場合は公募にフォールバック
+            if ($sentCount === 0 && $notificationType === 'fixed') {
+                $sentCount = sendJobNotifications($jobId, 'normal');
+                $notificationType = 'normal (fallback)';
+            }
+
             // 監査ログ記録
             logAudit(
                 'start_recruiting',
                 'cleaning_job',
                 $jobId,
                 ['status' => 'unassigned'],
-                ['status' => 'recruiting']
+                ['status' => 'recruiting', 'notification_type' => $notificationType]
             );
 
             if ($sentCount > 0) {
@@ -342,7 +414,7 @@ if (isPost()) {
     if ($action === 'send_urgent') {
         // 最新状態を取得して検証
         $currentJob = dbSelectOne(
-            "SELECT status, assigned_cleaner_id FROM cleaning_jobs WHERE id = ? AND deleted_at IS NULL",
+            "SELECT status, assigned_cleaner_id, is_urgent FROM cleaning_jobs WHERE id = ? AND deleted_at IS NULL",
             [$jobId]
         );
 
@@ -363,6 +435,15 @@ if (isPost()) {
                 $errors[] = '他の操作と競合しました。ページを更新して再度お試しください。';
             } else {
                 $sentCount = sendJobNotifications($jobId, 'urgent');
+
+                // 監査ログ記録
+                logAudit(
+                    'send_urgent',
+                    'cleaning_job',
+                    $jobId,
+                    ['is_urgent' => $currentJob['is_urgent'] ?? 0],
+                    ['is_urgent' => 1, 'sent_count' => $sentCount]
+                );
 
                 if ($sentCount > 0) {
                     flashSuccess("【急募】通知を送信しました（{$sentCount}名）");
@@ -399,6 +480,15 @@ if (isPost()) {
             } else {
                 $sentCount = sendJobNotifications($jobId, 'normal');
 
+                // 監査ログ記録
+                logAudit(
+                    'start_public',
+                    'cleaning_job',
+                    $jobId,
+                    ['status' => $currentJob['status']],
+                    ['status' => 'recruiting', 'sent_count' => $sentCount]
+                );
+
                 if ($sentCount > 0) {
                     flashSuccess("公募通知を送信しました（{$sentCount}名）");
                 } else {
@@ -414,25 +504,38 @@ if (isPost()) {
         $baseReward = (int) input('base_reward', 0);
         $maxReward = 1000000; // 上限100万円
 
-        // 支払済み・キャンセル済みの案件は報酬変更不可
+        // 完了・支払済み・キャンセル済みの案件は報酬変更不可（支払いレコードとの不整合防止）
         $currentJob = dbSelectOne(
-            "SELECT status FROM cleaning_jobs WHERE id = ? AND deleted_at IS NULL",
+            "SELECT status, base_reward FROM cleaning_jobs WHERE id = ? AND deleted_at IS NULL",
             [$jobId]
         );
-        if ($currentJob && in_array($currentJob['status'], ['paid', 'cancelled'], true)) {
-            $errors[] = '支払済みまたはキャンセル済みの案件は報酬を変更できません';
+        if ($currentJob && in_array($currentJob['status'], ['completed', 'paid', 'cancelled'], true)) {
+            $errors[] = '完了・支払済み・キャンセル済みの案件は報酬を変更できません';
         } elseif ($baseReward < 0) {
             $errors[] = '報酬は0円以上で指定してください';
         } elseif ($baseReward > $maxReward) {
             $errors[] = '報酬は' . number_format($maxReward) . '円以下で指定してください';
+        } elseif ($currentJob && (int)$currentJob['base_reward'] === $baseReward) {
+            // 同じ値なら更新不要
+            flashSuccess('報酬は変更されていません');
+            redirect("/jobs/{$jobId}");
         } else {
-            // 案件の報酬を更新（顧客料金は変更しない: 独立）
-            // 楽観ロック: 支払済み・キャンセル済みでないことをWHERE条件で保証
-            $rowCount = dbUpdate('cleaning_jobs', ['base_reward' => $baseReward], 'id = ? AND status NOT IN (?, ?)', [$jobId, 'paid', 'cancelled']);
+            $oldReward = (int)($currentJob['base_reward'] ?? 0);
+            // 楽観ロック: 完了・支払済み・キャンセル済みでないことをWHERE条件で保証
+            $rowCount = dbUpdate('cleaning_jobs', ['base_reward' => $baseReward], 'id = ? AND status NOT IN (?, ?, ?)', [$jobId, 'completed', 'paid', 'cancelled']);
 
             if ($rowCount === 0) {
                 $errors[] = '他の操作と競合しました。ページを更新して再度お試しください。';
             } else {
+                // 監査ログ記録
+                logAudit(
+                    'update_reward',
+                    'cleaning_job',
+                    $jobId,
+                    ['base_reward' => $oldReward],
+                    ['base_reward' => $baseReward]
+                );
+
                 flashSuccess('報酬を更新しました');
                 redirect("/jobs/{$jobId}");
             }
@@ -472,12 +575,24 @@ if (isPost()) {
 
             dbBegin();
             try {
+                // ジョブをロックして最新ステータスを再確認（TOCTOU対策）
+                $lockedJob = dbSelectOne(
+                    "SELECT status FROM cleaning_jobs WHERE id = ? AND deleted_at IS NULL FOR UPDATE",
+                    [$jobId]
+                );
+                if (!$lockedJob || !in_array($lockedJob['status'], ['assigned', 'completed'], true)) {
+                    throw new Exception('案件のステータスが変更されたため延長できません');
+                }
+
                 // 予約をFOR UPDATEでロックして最新値を取得（競合対策）
                 if ($reservation) {
                     $reservation = dbSelectOne(
-                        "SELECT * FROM reservations WHERE id = ? FOR UPDATE",
+                        "SELECT * FROM reservations WHERE id = ? AND deleted_at IS NULL FOR UPDATE",
                         [$reservation['id']]
                     );
+                    if (!$reservation) {
+                        throw new Exception('関連する予約が削除されたため延長できません');
+                    }
                 }
 
                 // ロック取得後に延長可能時間を再検証（TOCTOU対策）
@@ -526,11 +641,22 @@ if (isPost()) {
                         'total_price' => (int) $reservation['base_price'] + $newExtPrice,
                     ], 'id = ?', [$reservation['id']]);
 
-                    // 清掃案件のscheduled_atも更新（日跨ぎ対応）
+                    // 清掃案件のscheduled_at・scheduled_end_atも更新（日跨ぎ対応）
+                    $cleaningMinutes = getCleaningDuration((int)$job['sales_area_id']);
                     dbUpdate('cleaning_jobs', [
                         'scheduled_at' => date('Y-m-d H:i:s', $newEndTimestamp),
+                        'scheduled_end_at' => date('Y-m-d H:i:s', $newEndTimestamp + ($cleaningMinutes * 60)),
                     ], 'id = ?', [$jobId]);
                 }
+
+                // 監査ログ記録
+                logAudit(
+                    'add_extension',
+                    'cleaning_job',
+                    $jobId,
+                    [],
+                    ['extension_hours' => $extensionHours, 'additional_price' => $additionalPrice]
+                );
 
                 dbCommit();
                 flashSuccess("延長を登録しました（+{$extensionHours}時間、料金 " . number_format($additionalPrice) . "円）");
@@ -538,7 +664,7 @@ if (isPost()) {
             } catch (Exception $e) {
                 dbRollback();
                 error_log("Extension add failed for job {$jobId}: " . $e->getMessage());
-                $errors[] = '延長の登録に失敗しました';
+                $errors[] = $e->getMessage() ?: '延長の登録に失敗しました';
             }
         }
     }
@@ -682,7 +808,7 @@ require __DIR__ . '/../../includes/header.php';
                                 <td><?= h(formatDateTime($app['applied_at'])) ?></td>
                                 <td>
                                     <?php $appStatus = applicationStatusInfo($app['status']); ?>
-                                    <span class="badge bg-<?= $appStatus['class'] ?>"><?= $appStatus['label'] ?></span>
+                                    <span class="badge bg-<?= $appStatus['class'] ?>"><?= h($appStatus['label']) ?></span>
                                 </td>
                                 <td>
                                     <?php if ($app['status'] === 'applied' && $job['status'] === 'recruiting'): ?>
@@ -733,7 +859,7 @@ require __DIR__ . '/../../includes/header.php';
                                     };
                                     ?>
                                     <span class="badge bg-<?= $ext['status'] === 'approved' ? 'success' : ($ext['status'] === 'pending' ? 'warning' : 'danger') ?>">
-                                        <?= $extStatusLabel ?>
+                                        <?= h($extStatusLabel) ?>
                                     </span>
                                 </td>
                                 <td><?= h(formatDateTime($ext['created_at'])) ?></td>
@@ -842,7 +968,7 @@ require __DIR__ . '/../../includes/header.php';
                         'fixed_waiting' => '固定者応答待ち',
                         'public_recruiting' => '公募中',
                         'completed' => '完了',
-                        default => $job['notification_status']
+                        default => h($job['notification_status'])
                     };
                     ?>
                 </div>

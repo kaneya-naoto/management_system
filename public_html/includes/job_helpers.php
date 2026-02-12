@@ -25,9 +25,10 @@ function jobTypeLabel(?string $type): string
 function applicationStatusInfo(string $status): array
 {
     return match($status) {
+        'applied'  => ['class' => 'info', 'label' => '応募中'],
         'accepted' => ['class' => 'success', 'label' => '採用'],
         'rejected' => ['class' => 'danger', 'label' => '不採用'],
-        default => ['class' => 'secondary', 'label' => '保留']
+        default => ['class' => 'secondary', 'label' => $status]
     };
 }
 
@@ -135,23 +136,26 @@ function getApplicationUrl(string $token): string
 /**
  * 案件完了時の支払いレコードを生成
  * @param int $jobId 案件ID
+ * @param bool $useTransaction 自前でトランザクション管理する場合true（呼び出し元がトランザクション中ならfalse）
  * @return int|null 生成された支払いID、既に存在する場合はnull
  */
-function createPaymentForJob(int $jobId): ?int
+function createPaymentForJob(int $jobId, bool $useTransaction = true): ?int
 {
-    dbBegin();
+    if ($useTransaction) {
+        dbBegin();
+    }
     try {
         // 行ロック付きで案件を取得
         $job = dbSelectOne(
             "SELECT j.*, j.assigned_cleaner_id
              FROM cleaning_jobs j
-             WHERE j.id = ? AND j.assigned_cleaner_id IS NOT NULL
+             WHERE j.id = ? AND j.assigned_cleaner_id IS NOT NULL AND j.deleted_at IS NULL
              FOR UPDATE",
             [$jobId]
         );
 
         if (!$job) {
-            dbRollback();
+            if ($useTransaction) { dbRollback(); }
             return null;
         }
 
@@ -162,7 +166,7 @@ function createPaymentForJob(int $jobId): ?int
         );
 
         if ($existing) {
-            dbRollback();
+            if ($useTransaction) { dbRollback(); }
             return null;
         }
 
@@ -180,11 +184,11 @@ function createPaymentForJob(int $jobId): ?int
             'status' => 'pending',
         ]);
 
-        dbCommit();
+        if ($useTransaction) { dbCommit(); }
         return $paymentId;
 
     } catch (Exception $e) {
-        dbRollback();
+        if ($useTransaction) { dbRollback(); }
         error_log("createPaymentForJob error: " . $e->getMessage());
         return null;
     }
@@ -202,7 +206,7 @@ function isCompletionKeyword(string $text): bool
 }
 
 /**
- * 清掃案件を完了状態に更新（冪等性確保）
+ * 清掃案件を完了状態に更新（担当案件の完了報告処理）
  * @param int $jobId 案件ID
  * @param int $cleanerId 清掃者ID
  * @return array ['success' => bool, 'message' => string, 'job' => array|null]
@@ -214,7 +218,7 @@ function completeCleaningJob(int $jobId, int $cleanerId): array
         // 行ロック付きで案件を取得
         $job = dbSelectOne(
             "SELECT * FROM cleaning_jobs
-             WHERE id = ? AND assigned_cleaner_id = ?
+             WHERE id = ? AND assigned_cleaner_id = ? AND deleted_at IS NULL
              FOR UPDATE",
             [$jobId, $cleanerId]
         );
@@ -266,8 +270,8 @@ function completeCleaningJob(int $jobId, int $cleanerId): array
             'completed_at' => $completedAt,
         ], 'id = ?', [$jobId]);
 
-        // 支払いレコード生成
-        createPaymentForJob($jobId);
+        // 支払いレコード生成（既にトランザクション中なので自前管理しない）
+        createPaymentForJob($jobId, false);
 
         dbCommit();
 
@@ -325,9 +329,13 @@ function getCleanerTodayJobs(int $cleanerId, string $status = 'assigned'): array
 function sendSameDayNotification(int $reservationId, int $cleaningJobId): int
 {
     // 清掃案件のステータスをrecruitingに更新
-    dbUpdate('cleaning_jobs', [
+    $updated = dbUpdate('cleaning_jobs', [
         'status' => 'recruiting',
     ], 'id = ? AND status = ?', [$cleaningJobId, 'unassigned']);
+
+    if ($updated === 0) {
+        return 0; // ステータスが既に変更済みの場合は通知しない
+    }
 
     // 通知送信
     return sendJobNotifications($cleaningJobId, 'normal');

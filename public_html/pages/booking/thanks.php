@@ -65,68 +65,47 @@ require __DIR__ . '/../../includes/public_header.php';
         </div>
     </div>
 
-    <div class="booking-card" style="border: 2px solid var(--booking-accent);">
-        <div class="booking-card-header" style="background: linear-gradient(135deg, var(--booking-accent) 0%, #059669 100%);">
-            <h5 class="text-center mb-0">予約が完了しました</h5>
-        </div>
+    <div class="booking-card">
         <div class="booking-card-body text-center">
             <div class="booking-complete-icon">
                 <i class="bi bi-check-lg"></i>
             </div>
 
-            <h4 class="booking-complete-title">ありがとうございます</h4>
+            <h4 class="booking-complete-title">予約が完了しました</h4>
             <p class="booking-complete-subtitle">
-                確認メールを <strong><?= h($completedBooking['customer_email']) ?></strong> にお送りしました。
+                確認メールを <?= h($completedBooking['customer_email']) ?> にお送りしました。
             </p>
 
-            <div class="bg-light p-4 rounded-3 text-start mb-4">
-                <h5 class="mb-3"><i class="bi bi-calendar-check me-2"></i>ご予約内容</h5>
-                <table class="table table-borderless mb-0">
-                    <tr>
-                        <th class="text-muted" style="width: 30%">予約番号</th>
-                        <td><strong style="color: var(--booking-primary); font-size: 1.25rem;">#<?= $completedBooking['reservation_id'] ?></strong></td>
-                    </tr>
-                    <tr>
-                        <th class="text-muted">店舗</th>
-                        <td><?= h($completedBooking['store_name']) ?> - <?= h($completedBooking['area_name']) ?></td>
-                    </tr>
-                    <tr>
-                        <th class="text-muted">日時</th>
-                        <td>
-                            <?= h(formatDate($completedBooking['reservation_date'], 'Y年n月j日')) ?><br>
-                            <?= h(substr($completedBooking['start_time'], 0, 5)) ?> 〜 <?= h($completedBooking['end_time'] === '00:00' ? '24:00' : substr($completedBooking['end_time'], 0, 5)) ?>
-                        </td>
-                    </tr>
+            <div class="text-start mb-4">
+                <dl class="row mb-0">
+                    <dt class="col-4 text-muted fw-normal">予約番号</dt>
+                    <dd class="col-8 fw-bold" style="color: var(--booking-primary);">#<?= $completedBooking['reservation_id'] ?></dd>
+
+                    <dt class="col-4 text-muted fw-normal">店舗</dt>
+                    <dd class="col-8"><?= h($completedBooking['store_name']) ?><br><?= h($completedBooking['area_name']) ?></dd>
+
+                    <dt class="col-4 text-muted fw-normal">日時</dt>
+                    <dd class="col-8">
+                        <?= h(formatDate($completedBooking['reservation_date'], 'n月j日')) ?>
+                        <?= h(substr($completedBooking['start_time'], 0, 5)) ?>〜<?= h($completedBooking['end_time'] === '00:00' ? '24:00' : substr($completedBooking['end_time'], 0, 5)) ?>
+                    </dd>
+
                     <?php if ($keyAssignment): ?>
-                    <tr>
-                        <th class="text-muted">鍵番号</th>
-                        <td><span class="badge fs-5" style="background: var(--booking-primary);"><?= h($keyAssignment['key_number']) ?></span></td>
-                    </tr>
+                    <dt class="col-4 text-muted fw-normal">鍵番号</dt>
+                    <dd class="col-8"><span class="badge" style="background: var(--booking-primary);"><?= h($keyAssignment['key_number']) ?></span></dd>
                     <?php endif; ?>
-                    <tr>
-                        <th class="text-muted">お名前</th>
-                        <td><?= h($completedBooking['customer_name']) ?></td>
-                    </tr>
-                    <tr>
-                        <th class="text-muted">お支払い金額</th>
-                        <td><strong style="color: var(--booking-primary);"><?= number_format($completedBooking['base_price']) ?>円</strong></td>
-                    </tr>
-                </table>
+
+                    <dt class="col-4 text-muted fw-normal">お名前</dt>
+                    <dd class="col-8"><?= h($completedBooking['customer_name']) ?></dd>
+
+                    <dt class="col-4 text-muted fw-normal">金額</dt>
+                    <dd class="col-8 fw-bold" style="color: var(--booking-primary);"><?= number_format($completedBooking['base_price']) ?>円</dd>
+                </dl>
             </div>
 
-            <div class="availability-alert available">
-                <i class="bi bi-info-circle"></i>
-                <span>
-                    <strong>ご来店時のお願い</strong><br>
-                    受付にて予約番号「<strong>#<?= $completedBooking['reservation_id'] ?></strong>」をお伝えください。
-                </span>
-            </div>
-
-            <div class="mt-4">
-                <a href="<?= url('/') ?>" class="btn-booking-primary">
-                    <i class="bi bi-house me-2"></i>トップページへ
-                </a>
-            </div>
+            <a href="<?= url('/') ?>" class="btn-booking-primary d-block">
+                <i class="bi bi-house me-2"></i>トップページへ
+            </a>
         </div>
     </div>
 </div>

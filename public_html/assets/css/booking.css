@@ -462,6 +462,7 @@
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     flex: 1;
+    min-width: 0;
 }
 
 .date-pills-scroll::-webkit-scrollbar {
@@ -666,6 +667,17 @@
     pointer-events: none;
 }
 
+/* 翌日区切りラベル */
+.slot-grid-separator {
+    grid-column: 1 / -1;
+    text-align: center;
+    font-size: 0.75rem;
+    color: #6b7280;
+    padding: 4px 0;
+    border-top: 1px dashed #d1d5db;
+    margin-top: 4px;
+}
+
 /* ===========================
  * 凡例・ガイド・サマリー
  * =========================== */
@@ -765,6 +777,43 @@
     font-size: 0.875rem;
     font-weight: 400;
     opacity: 0.9;
+}
+
+/* ===========================
+ * レスポンシブ: 確認・完了画面
+ * =========================== */
+@media (max-width: 576px) {
+    /* テーブルのth折返し防止 */
+    .booking-card .table th,
+    .booking-container .table th {
+        width: auto !important;
+        white-space: nowrap;
+        padding-right: 0.75rem;
+        font-size: 0.875rem;
+    }
+
+    .booking-card .table td {
+        font-size: 0.875rem;
+    }
+
+    /* ボタン: 縦並び・全幅 */
+    .booking-card .d-flex.gap-2 {
+        flex-direction: column;
+    }
+
+    .booking-card .d-flex.gap-2 > * {
+        width: 100%;
+        text-align: center;
+    }
+
+    /* 合計金額エリア調整 */
+    .booking-card .bg-light .h3 {
+        font-size: 1.5rem;
+    }
+
+    .booking-card .bg-light .h5 {
+        font-size: 1rem;
+    }
 }
 
 /* ===========================

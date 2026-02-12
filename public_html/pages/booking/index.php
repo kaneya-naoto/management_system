@@ -405,7 +405,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         var url = DAY_AVAILABILITY_URL + '?sales_area_id=' + encodeURIComponent(currentAreaId) + '&date=' + encodeURIComponent(dateStr);
 
-        fetch(url)
+        fetch(url, { cache: 'no-store' })
             .then(function(res) {
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 return res.json();
@@ -434,6 +434,14 @@ document.addEventListener('DOMContentLoaded', function() {
         slotGrid.innerHTML = '';
 
         slotData.forEach(function(slot, index) {
+            // midnight境界に「翌日」区切りラベルを挿入
+            if (index > 0 && slot.next_day && !slotData[index - 1].next_day) {
+                var separator = document.createElement('div');
+                separator.className = 'slot-grid-separator';
+                separator.textContent = '翌日';
+                slotGrid.appendChild(separator);
+            }
+
             var tile = document.createElement('button');
             tile.type = 'button';
             tile.className = 'slot-tile';
@@ -524,13 +532,33 @@ document.addEventListener('DOMContentLoaded', function() {
         selectionEnd = index;
         updateSlotHighlights();
 
-        var startStr = slotData[selectionStart].time;
-        var endStr = addMinutes(slotData[selectionEnd].time, 30);
+        var startSlot = slotData[selectionStart];
+        var endSlot = slotData[selectionEnd];
+        var startStr = startSlot.time;
+        var endStr = addMinutes(endSlot.time, 30);
         var durationHours = durationMinutes / 60;
         var price = Math.round(currentHourlyRate * durationHours);
 
+        // reservation_date: 開始スロットが翌日の場合は+1日
+        if (startSlot.next_day) {
+            var nextDate = new Date(selectedDate + 'T00:00:00');
+            nextDate.setDate(nextDate.getDate() + 1);
+            reservationDate.value = formatDate(nextDate);
+        } else {
+            reservationDate.value = selectedDate;
+        }
+
         startTimeInput.value = startStr;
         endTimeInput.value = endStr;
+
+        // 終了時間の表示: 深夜跨ぎ対応
+        var endDisplay = endStr;
+        if (!startSlot.next_day && endSlot.next_day) {
+            // 開始=当日、終了=翌日 → 深夜跨ぎ
+            endDisplay = '翌' + endStr;
+        } else if (endStr === '00:00' && !endSlot.next_day) {
+            endDisplay = '24:00';
+        }
 
         slotGuide.style.display = 'none';
         slotSummary.style.display = '';
@@ -538,7 +566,7 @@ document.addEventListener('DOMContentLoaded', function() {
             '<div class="slot-summary-time">' +
                 '<span>' + startStr + '</span>' +
                 '<i class="bi bi-arrow-right"></i>' +
-                '<span>' + (endStr === '00:00' ? '24:00' : endStr) + '</span>' +
+                '<span>' + endDisplay + '</span>' +
             '</div>' +
             '<div class="slot-summary-detail">' +
                 durationHours + '時間 / 約 ' + price.toLocaleString() + '円（税込）' +

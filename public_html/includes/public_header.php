@@ -11,7 +11,7 @@ header('Referrer-Policy: no-referrer');
     <title><?= h($pageTitle ?? 'カクレマ') ?> | カクレマ</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="<?= url('/assets/css/booking.css') ?>" rel="stylesheet">
+    <link href="<?= url('/assets/css/booking.css') ?>?v=<?= filemtime(__DIR__ . '/../assets/css/booking.css') ?>" rel="stylesheet">
     <?php
     // LIFF SDK読み込み（店舗コードがあり、LINE設定がある場合）
     $liffId = null;
@@ -50,9 +50,6 @@ header('Referrer-Policy: no-referrer');
             <a class="navbar-brand" href="/">
                 <i class="bi bi-building"></i> カクレマ
             </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="/login">スタッフログイン</a>
-            </div>
         </div>
     </nav>
 

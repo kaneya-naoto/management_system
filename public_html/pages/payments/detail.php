@@ -44,7 +44,7 @@ if (!$payment) {
     redirect('/payments');
 }
 
-$pageTitle = '支払い詳細 - ' . h($payment['cleaner_name']);
+$pageTitle = '支払い詳細 - ' . $payment['cleaner_name'];
 
 // 支払い処理
 $errors = [];
@@ -56,6 +56,8 @@ if (isPost()) {
     if ($action === 'pay') {
         if ($payment['status'] === 'paid') {
             $errors[] = 'この支払いは既に処理済みです';
+        } elseif (!in_array($payment['job_status'], ['completed', 'paid'], true)) {
+            $errors[] = '案件が完了していないため支払い処理できません（現在: ' . h(jobStatusLabel($payment['job_status'])['label']) . '）';
         } else {
             $paidAt = input('paid_at', date('Y-m-d'));
             $notes = trim(input('notes', ''));
@@ -77,6 +79,13 @@ if (isPost()) {
                     if ($updated === 0) {
                         throw new Exception('支払い処理に失敗しました（既に処理済みの可能性があります）');
                     }
+
+                    // 清掃案件のステータスも支払済に連動更新
+                    dbUpdate('cleaning_jobs',
+                        ['status' => 'paid'],
+                        'id = ? AND status = ?',
+                        [$payment['job_id'], 'completed']
+                    );
 
                     // 監査ログ記録
                     logAudit(
@@ -209,7 +218,7 @@ require __DIR__ . '/../../includes/header.php';
                             <?php
                             $statusInfo = jobStatusLabel($payment['job_status']);
                             ?>
-                            <span class="badge bg-<?= $statusInfo['class'] ?>"><?= $statusInfo['label'] ?></span>
+                            <span class="badge bg-<?= $statusInfo['class'] ?>"><?= h($statusInfo['label']) ?></span>
                         </td>
                     </tr>
                     <?php if ($payment['customer_name']): ?>

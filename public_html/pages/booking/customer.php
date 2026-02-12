@@ -9,17 +9,27 @@ $isPublicPage = true;
 $storeCode = $storeCode ?? $_SESSION['booking_store_code'] ?? null;
 $bookingBasePath = $storeCode ? "/booking/{$storeCode}" : '/booking';
 
-// POST検証
-if (!isPost()) {
+// POST or セッション復帰（confirm.phpからのバリデーションエラー戻り対応）
+$isReturnFromConfirm = !isPost() && !empty($_SESSION['booking']);
+if (!isPost() && !$isReturnFromConfirm) {
     redirect($bookingBasePath);
 }
-requireCsrf();
+if (isPost()) {
+    requireCsrf();
+}
 
-// 入力取得
-$salesAreaId = (int) input('sales_area_id', 0);
-$reservationDate = input('reservation_date', '');
-$startTime = input('start_time', '');
-$endTime = input('end_time', '');
+// 入力取得（POST時はフォームから、復帰時はセッションから）
+if ($isReturnFromConfirm) {
+    $salesAreaId = (int)($_SESSION['booking']['sales_area_id'] ?? 0);
+    $reservationDate = $_SESSION['booking']['reservation_date'] ?? '';
+    $startTime = $_SESSION['booking']['start_time'] ?? '';
+    $endTime = $_SESSION['booking']['end_time'] ?? '';
+} else {
+    $salesAreaId = (int) input('sales_area_id', 0);
+    $reservationDate = input('reservation_date', '');
+    $startTime = input('start_time', '');
+    $endTime = input('end_time', '');
+}
 
 // 店舗設定を取得（営業区分のstore_id経由）
 $bookingStoreSettings = null;
@@ -213,6 +223,13 @@ if (!empty($lineUserId)) {
     }
 }
 
+// 定員取得（selectの上限に使用）
+$capacity = (int)($salesArea['capacity'] ?? 4);
+
+// confirm.phpからの戻り時: 入力済み顧客データを復元
+$prevInput = $_SESSION['customer_input'] ?? [];
+unset($_SESSION['customer_input']);
+
 $csrfToken = generateCsrfToken();
 
 require __DIR__ . '/../../includes/public_header.php';
@@ -265,27 +282,31 @@ require __DIR__ . '/../../includes/public_header.php';
                 <div class="mb-3">
                     <label class="form-label fw-bold">お名前 <span class="text-danger">*</span></label>
                     <input type="text" name="customer_name" class="form-control form-control-lg"
-                           required placeholder="山田 太郎" maxlength="100">
+                           required placeholder="山田 太郎" maxlength="100"
+                           value="<?= h($prevInput['customer_name'] ?? '') ?>">
                 </div>
 
                 <div class="mb-3">
                     <label class="form-label fw-bold">メールアドレス <span class="text-danger">*</span></label>
                     <input type="email" name="customer_email" class="form-control form-control-lg"
-                           required placeholder="example@email.com" maxlength="255">
+                           required placeholder="example@email.com" maxlength="255"
+                           value="<?= h($prevInput['customer_email'] ?? '') ?>">
                     <div class="form-text">予約確認メールをお送りします</div>
                 </div>
 
                 <div class="mb-3">
                     <label class="form-label fw-bold">電話番号 <span class="text-danger">*</span></label>
                     <input type="tel" name="customer_phone" class="form-control form-control-lg"
-                           required placeholder="090-1234-5678" maxlength="20">
+                           required placeholder="090-1234-5678" maxlength="20"
+                           value="<?= h($prevInput['customer_phone'] ?? '') ?>">
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label fw-bold">ご利用人数</label>
+                    <label class="form-label fw-bold">ご利用人数（定員<?= $capacity ?>名）</label>
                     <select name="num_people" class="form-select">
-                        <?php for ($i = 1; $i <= 10; $i++): ?>
-                        <option value="<?= $i ?>"><?= $i ?>名</option>
+                        <?php $prevPeople = (int)($prevInput['num_people'] ?? 1); ?>
+                        <?php for ($i = 1; $i <= $capacity; $i++): ?>
+                        <option value="<?= $i ?>" <?= $i === $prevPeople ? 'selected' : '' ?>><?= $i ?>名</option>
                         <?php endfor; ?>
                     </select>
                 </div>
