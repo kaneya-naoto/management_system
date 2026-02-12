@@ -177,6 +177,11 @@ switch ($path) {
         require __DIR__ . '/api/booking/check-availability.php';
         break;
 
+    // API: 一日分の空き状況バッチ取得
+    case '/api/booking/day-availability':
+        require __DIR__ . '/api/booking/day-availability.php';
+        break;
+
     // API: CSVエクスポート
     case '/api/export/payments':
         requireLogin();

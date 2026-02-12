@@ -200,59 +200,46 @@ require __DIR__ . '/../../includes/public_header.php';
             </div>
         </div>
 
-        <!-- 日時選択 -->
-        <div class="booking-card mb-4">
+        <!-- Hidden inputs for date/time (set by tile selection JS) -->
+        <input type="hidden" name="reservation_date" id="reservationDate" value="">
+        <input type="hidden" name="start_time" id="startTime" value="">
+        <input type="hidden" name="end_time" id="endTime" value="">
+
+        <!-- 日付選択（ピル形式） -->
+        <div class="booking-card mb-4" id="dateSection" style="display: none;">
             <div class="booking-card-header">
-                <h5>日時を選択</h5>
+                <h5>日付を選択</h5>
             </div>
             <div class="booking-card-body">
-                <div class="mb-4">
-                    <label class="form-label fw-bold">ご利用日 <span class="text-danger">*</span></label>
-                    <input type="date" name="reservation_date" class="form-control form-control-lg"
-                           id="reservationDate" required
-                           min="<?= date('Y-m-d') ?>"
-                           max="<?= date('Y-m-d', strtotime('+30 days')) ?>">
+                <div class="date-pills-wrapper">
+                    <button type="button" class="date-pills-arrow" id="datePillsLeft"><i class="bi bi-chevron-left"></i></button>
+                    <div class="date-pills-scroll">
+                        <div class="date-pills" id="datePills"></div>
+                    </div>
+                    <button type="button" class="date-pills-arrow" id="datePillsRight"><i class="bi bi-chevron-right"></i></button>
                 </div>
+            </div>
+        </div>
 
-                <div class="time-select-grid">
-                    <div>
-                        <label class="form-label fw-bold">開始時間 <span class="text-danger">*</span></label>
-                        <select name="start_time" class="form-select form-select-lg" required id="startTime">
-                            <option value="">--:--</option>
-                            <?php for ($h = 0; $h < 24; $h++): ?>
-                                <?php for ($m = 0; $m < 60; $m += 30): ?>
-                                    <option value="<?= sprintf('%02d:%02d', $h, $m) ?>">
-                                        <?= sprintf('%02d:%02d', $h, $m) ?>
-                                    </option>
-                                <?php endfor; ?>
-                            <?php endfor; ?>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="form-label fw-bold">終了時間 <span class="text-danger">*</span></label>
-                        <select name="end_time" class="form-select form-select-lg" required id="endTime">
-                            <option value="">--:--</option>
-                            <?php for ($h = 0; $h < 24; $h++): ?>
-                                <?php for ($m = 0; $m < 60; $m += 30): ?>
-                                    <?php if ($h === 0 && $m === 0) continue; // 00:00は24:00として最後に追加 ?>
-                                    <option value="<?= sprintf('%02d:%02d', $h, $m) ?>">
-                                        <?= sprintf('%02d:%02d', $h, $m) ?>
-                                    </option>
-                                <?php endfor; ?>
-                            <?php endfor; ?>
-                            <!-- 24:00（=00:00）を最後に追加 -->
-                            <option value="00:00">24:00</option>
-                        </select>
-                    </div>
+        <!-- 時間選択（タイルグリッド） -->
+        <div class="booking-card mb-4" id="timeSection" style="display: none;">
+            <div class="booking-card-header">
+                <h5>時間を選択 <span class="booking-card-header-sub" id="selectedDateLabel"></span></h5>
+            </div>
+            <div class="booking-card-body">
+                <div class="slot-legend">
+                    <span class="slot-legend-item"><span class="slot-legend-dot dot-available"></span>空き</span>
+                    <span class="slot-legend-item"><span class="slot-legend-dot dot-full"></span>満室</span>
+                    <span class="slot-legend-item"><span class="slot-legend-dot dot-selected"></span>選択中</span>
                 </div>
-
-                <!-- 空き状況表示エリア -->
-                <div id="availabilityStatus" style="display: none;">
-                    <div class="availability-alert" id="availabilityAlert">
-                        <i class="bi" id="availabilityIcon"></i>
-                        <span id="availabilityMessage"></span>
-                    </div>
+                <div class="slot-grid-loading" id="slotLoading" style="display: none;">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                    <span>空き状況を取得中...</span>
                 </div>
+                <div class="slot-error" id="slotError" style="display: none;"></div>
+                <div class="slot-grid" id="slotGrid"></div>
+                <div class="slot-guide" id="slotGuide" style="display: none;"></div>
+                <div class="slot-summary" id="slotSummary" style="display: none;"></div>
             </div>
         </div>
 
@@ -267,242 +254,391 @@ require __DIR__ . '/../../includes/public_header.php';
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // === DOM elements ===
     const roomCards = document.querySelectorAll('.room-card');
     const salesAreaInput = document.getElementById('salesAreaInput');
     const reservationDate = document.getElementById('reservationDate');
-    const startTime = document.getElementById('startTime');
-    const endTime = document.getElementById('endTime');
+    const startTimeInput = document.getElementById('startTime');
+    const endTimeInput = document.getElementById('endTime');
     const submitBtn = document.getElementById('submitBtn');
-    const availabilityStatus = document.getElementById('availabilityStatus');
-    const availabilityAlert = document.getElementById('availabilityAlert');
-    const availabilityIcon = document.getElementById('availabilityIcon');
-    const availabilityMessage = document.getElementById('availabilityMessage');
+    const dateSection = document.getElementById('dateSection');
+    const datePills = document.getElementById('datePills');
+    const datePillsLeft = document.getElementById('datePillsLeft');
+    const datePillsRight = document.getElementById('datePillsRight');
+    const datePillsScroll = document.querySelector('.date-pills-scroll');
+    const timeSection = document.getElementById('timeSection');
+    const selectedDateLabel = document.getElementById('selectedDateLabel');
+    const slotGrid = document.getElementById('slotGrid');
+    const slotLoading = document.getElementById('slotLoading');
+    const slotError = document.getElementById('slotError');
+    const slotGuide = document.getElementById('slotGuide');
+    const slotSummary = document.getElementById('slotSummary');
 
-    // LIFF初期化（LIFF SDKが読み込まれている場合）
+    // === State ===
+    let currentAreaId = null;
+    let currentHourlyRate = 2500;
+    let currentMinDuration = <?= MIN_BOOKING_DURATION_HOURS ?>;
+    let currentMaxDuration = <?= MAX_BOOKING_DURATION_HOURS ?>;
+    let currentBookingDaysAhead = 30;
+    let selectedDate = null;
+    let slotData = [];
+    let selectionStart = null;
+    let selectionEnd = null;
+
+    // API URL
+    const DAY_AVAILABILITY_URL = <?= json_encode(url('/api/booking/day-availability'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+
+    // === LIFF initialization ===
     if (typeof liff !== 'undefined' && window.LIFF_ID) {
         liff.init({ liffId: window.LIFF_ID })
-            .then(() => {
+            .then(function() {
                 if (liff.isInClient()) {
-                    // LINEアプリ内で開かれている場合
                     document.getElementById('sourceInput').value = 'line';
-
-                    // プロフィール取得
                     if (liff.isLoggedIn()) {
                         liff.getProfile()
-                            .then(profile => {
+                            .then(function(profile) {
                                 document.getElementById('lineUserIdInput').value = profile.userId;
                                 document.getElementById('lineDisplayNameInput').value = profile.displayName;
                             })
-                            .catch(err => {
-                                console.error('Failed to get LINE profile:', err);
-                            });
+                            .catch(function(err) { console.error('Failed to get LINE profile:', err); });
                     }
                 }
             })
-            .catch(err => {
-                console.error('LIFF init failed:', err);
-            });
+            .catch(function(err) { console.error('LIFF init failed:', err); });
     }
 
-    // 現在選択中の営業時間情報
-    let currentBusinessHours = {
-        openingTime: '10:00',
-        closingTime: '00:00',
-        is24h: false
-    };
-
-    // 現在選択中の店舗設定
-    let currentStoreSettings = {
-        minDuration: <?= MIN_BOOKING_DURATION_HOURS ?>,
-        maxDuration: <?= MAX_BOOKING_DURATION_HOURS ?>,
-        bookingDaysAhead: 30
-    };
-
-    // カード選択処理
-    roomCards.forEach(card => {
+    // === Room card selection ===
+    roomCards.forEach(function(card) {
         card.addEventListener('click', function() {
-            // 全カードの選択を解除
-            roomCards.forEach(c => c.classList.remove('selected'));
-            // クリックしたカードを選択
+            roomCards.forEach(function(c) { c.classList.remove('selected'); });
             this.classList.add('selected');
-            // hidden inputに値を設定
-            salesAreaInput.value = this.dataset.areaId;
-            // ラジオボタンもチェック
             this.querySelector('input[type="radio"]').checked = true;
 
-            // 営業時間情報を更新
-            currentBusinessHours = {
-                openingTime: this.dataset.openingTime || '10:00',
-                closingTime: this.dataset.closingTime || '00:00',
-                is24h: this.dataset.is24h === '1'
-            };
+            salesAreaInput.value = this.dataset.areaId;
+            currentAreaId = this.dataset.areaId;
+            currentHourlyRate = parseInt(this.dataset.hourlyRate) || 2500;
+            currentMinDuration = parseInt(this.dataset.minDuration) || <?= MIN_BOOKING_DURATION_HOURS ?>;
+            currentMaxDuration = parseInt(this.dataset.maxDuration) || <?= MAX_BOOKING_DURATION_HOURS ?>;
+            currentBookingDaysAhead = parseInt(this.dataset.bookingDaysAhead) || 30;
 
-            // 店舗設定を更新
-            currentStoreSettings = {
-                minDuration: parseInt(this.dataset.minDuration) || <?= MIN_BOOKING_DURATION_HOURS ?>,
-                maxDuration: parseInt(this.dataset.maxDuration) || <?= MAX_BOOKING_DURATION_HOURS ?>,
-                bookingDaysAhead: parseInt(this.dataset.bookingDaysAhead) || 30
-            };
+            // Reset time selection
+            resetTimeSelection();
+            timeSection.style.display = 'none';
 
-            // 予約日の最大値を店舗設定に合わせて更新（タイムゾーン考慮）
-            const maxDate = new Date();
-            maxDate.setDate(maxDate.getDate() + currentStoreSettings.bookingDaysAhead);
-            const y = maxDate.getFullYear();
-            const m = String(maxDate.getMonth() + 1).padStart(2, '0');
-            const d = String(maxDate.getDate()).padStart(2, '0');
-            reservationDate.max = `${y}-${m}-${d}`;
-
-            // 時間選択肢を営業時間に基づいてフィルタリング
-            updateTimeOptions();
-
-            // 空き状況チェック
-            checkAvailability();
+            // Generate date pills & show
+            generateDatePills();
+            dateSection.style.display = '';
+            dateSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         });
     });
 
-    // 時間選択肢を営業時間に基づいて更新
-    function updateTimeOptions() {
-        const { openingTime, closingTime, is24h } = currentBusinessHours;
+    // === Date pills generation ===
+    var dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+    var monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
 
-        // 24時間営業の場合は全て有効
-        if (is24h) {
-            enableAllTimeOptions();
-            return;
-        }
+    function generateDatePills() {
+        datePills.innerHTML = '';
+        var today = new Date();
+        today.setHours(0, 0, 0, 0);
 
-        const openingMinutes = timeToMinutes(openingTime);
-        // 00:00は24:00（1440分）として扱う
-        const closingMinutes = (closingTime === '00:00') ? 24 * 60 : timeToMinutes(closingTime);
-        const isOvernight = closingMinutes < openingMinutes;
+        for (var i = 0; i <= currentBookingDaysAhead; i++) {
+            var d = new Date(today);
+            d.setDate(d.getDate() + i);
+            var dateStr = formatDate(d);
+            var dow = d.getDay();
+            var isWeekend = (dow === 0 || dow === 6);
 
-        // 開始時間の選択肢を更新
-        Array.from(startTime.options).forEach(option => {
-            if (!option.value) return; // 空の選択肢はスキップ
-            const optionMinutes = timeToMinutes(option.value);
+            var pill = document.createElement('button');
+            pill.type = 'button';
+            pill.className = 'date-pill';
+            pill.dataset.date = dateStr;
+            if (i === 0) pill.classList.add('today');
+            if (selectedDate === dateStr) pill.classList.add('selected');
 
-            if (isOvernight) {
-                // 深夜営業: 開始時刻以降 OR 終了時刻より前
-                option.disabled = !(optionMinutes >= openingMinutes || optionMinutes < closingMinutes);
-            } else {
-                // 通常営業: 開始〜終了-30分の範囲
-                option.disabled = optionMinutes < openingMinutes || optionMinutes >= closingMinutes;
-            }
-        });
+            var wkSpan = document.createElement('span');
+            wkSpan.className = 'date-pill-weekday' + (isWeekend ? ' weekend' : '');
+            wkSpan.textContent = dayNames[dow];
 
-        // 終了時間の選択肢を更新
-        Array.from(endTime.options).forEach(option => {
-            if (!option.value) return;
-            const optionMinutes = (option.value === '00:00') ? 24 * 60 : timeToMinutes(option.value);
+            var daySpan = document.createElement('span');
+            daySpan.className = 'date-pill-day';
+            daySpan.textContent = d.getDate();
 
-            if (isOvernight) {
-                // 深夜営業
-                option.disabled = !(optionMinutes > openingMinutes || optionMinutes <= closingMinutes);
-            } else {
-                // 通常営業
-                option.disabled = optionMinutes <= openingMinutes || optionMinutes > closingMinutes;
-            }
-        });
+            var moSpan = document.createElement('span');
+            moSpan.className = 'date-pill-month';
+            moSpan.textContent = monthNames[d.getMonth()];
 
-        // 選択中の値が無効になった場合はリセット
-        if (startTime.selectedOptions[0]?.disabled) {
-            startTime.value = '';
-        }
-        if (endTime.selectedOptions[0]?.disabled) {
-            endTime.value = '';
+            pill.appendChild(wkSpan);
+            pill.appendChild(daySpan);
+            pill.appendChild(moSpan);
+
+            pill.addEventListener('click', (function(ds, el) {
+                return function() { selectDate(ds, el); };
+            })(dateStr, pill));
+
+            datePills.appendChild(pill);
         }
     }
 
-    function enableAllTimeOptions() {
-        Array.from(startTime.options).forEach(option => option.disabled = false);
-        Array.from(endTime.options).forEach(option => option.disabled = false);
+    // === Date selection ===
+    function selectDate(dateStr, pillElement) {
+        datePills.querySelectorAll('.date-pill').forEach(function(p) { p.classList.remove('selected'); });
+        pillElement.classList.add('selected');
+
+        selectedDate = dateStr;
+        reservationDate.value = dateStr;
+
+        var d = new Date(dateStr + 'T00:00:00');
+        selectedDateLabel.textContent = dateStr + '（' + dayNames[d.getDay()] + '）';
+
+        resetTimeSelection();
+        fetchDayAvailability(dateStr);
+        timeSection.style.display = '';
+        timeSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    function timeToMinutes(timeStr) {
-        const [hours, minutes] = timeStr.split(':').map(Number);
-        return hours * 60 + minutes;
-    }
+    // === Fetch day availability ===
+    function fetchDayAvailability(dateStr) {
+        slotGrid.innerHTML = '';
+        slotLoading.style.display = '';
+        slotError.style.display = 'none';
+        slotGuide.style.display = 'none';
 
-    function checkAvailability() {
-        const areaId = salesAreaInput.value;
-        const date = reservationDate.value;
-        const start = startTime.value;
-        const end = endTime.value;
+        var url = DAY_AVAILABILITY_URL + '?sales_area_id=' + encodeURIComponent(currentAreaId) + '&date=' + encodeURIComponent(dateStr);
 
-        if (!areaId || !date || !start || !end) {
-            submitBtn.disabled = true;
-            availabilityStatus.style.display = 'none';
-            return;
-        }
-
-        // 時間の妥当性チェック（深夜またぎ対応）
-        const startMinutes = timeToMinutes(start);
-        let endMinutes = (end === '00:00') ? 24 * 60 : timeToMinutes(end);
-
-        // 終了時間が開始時間より小さい場合は翌日扱い（例: 22:00→02:00）
-        if (endMinutes <= startMinutes && end !== '00:00') {
-            endMinutes += 24 * 60;
-        }
-
-        // 予約時間の計算
-        const durationMinutes = endMinutes - startMinutes;
-
-        // 店舗設定に基づく利用時間制限
-        const minMinutes = currentStoreSettings.minDuration * 60;
-        const maxMinutes = currentStoreSettings.maxDuration * 60;
-        if (durationMinutes < minMinutes || durationMinutes > maxMinutes) {
-            availabilityStatus.style.display = 'block';
-            availabilityAlert.className = 'availability-alert error';
-            availabilityIcon.className = 'bi bi-exclamation-circle';
-            availabilityMessage.textContent = '予約は' + currentStoreSettings.minDuration + '〜' + currentStoreSettings.maxDuration + '時間の範囲で選択してください';
-            submitBtn.disabled = true;
-            return;
-        }
-
-        // 空き状況チェックAPI呼び出し
-        fetch(<?= json_encode(url('/api/booking/check-availability'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                sales_area_id: areaId,
-                reservation_date: date,
-                start_time: start,
-                end_time: end
+        fetch(url)
+            .then(function(res) {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
             })
-        })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('HTTP error! status: ' + response.status);
-            }
-            return response.json();
-        })
-        .then(data => {
-            availabilityStatus.style.display = 'block';
-            if (data.available) {
-                availabilityAlert.className = 'availability-alert available';
-                availabilityIcon.className = 'bi bi-check-circle-fill';
-                availabilityMessage.textContent = '予約可能です';
-                submitBtn.disabled = false;
+            .then(function(data) {
+                slotLoading.style.display = 'none';
+                if (!data.slots || data.slots.length === 0) {
+                    slotError.style.display = '';
+                    slotError.textContent = 'この日は予約を受け付けていません';
+                    return;
+                }
+                slotData = data.slots;
+                renderSlotGrid();
+                showGuide('info', '開始時間をタップしてください');
+            })
+            .catch(function(err) {
+                slotLoading.style.display = 'none';
+                slotError.style.display = '';
+                slotError.textContent = '空き状況の取得に失敗しました';
+                console.error('Availability fetch error:', err);
+            });
+    }
+
+    // === Render slot grid ===
+    function renderSlotGrid() {
+        slotGrid.innerHTML = '';
+
+        slotData.forEach(function(slot, index) {
+            var tile = document.createElement('button');
+            tile.type = 'button';
+            tile.className = 'slot-tile';
+            tile.dataset.index = index;
+            tile.dataset.time = slot.time;
+
+            var statusIcon = slot.status === 'available' ? '○' : (slot.status === 'full' ? '×' : '−');
+
+            var timeSpan = document.createElement('span');
+            timeSpan.className = 'slot-tile-time';
+            timeSpan.textContent = slot.time;
+
+            var statusSpan = document.createElement('span');
+            statusSpan.className = 'slot-tile-status';
+            statusSpan.textContent = statusIcon;
+
+            tile.appendChild(timeSpan);
+            tile.appendChild(statusSpan);
+
+            if (slot.status === 'available') {
+                tile.classList.add('slot-available');
+                tile.addEventListener('click', (function(idx) {
+                    return function() { handleSlotClick(idx); };
+                })(index));
+            } else if (slot.status === 'full') {
+                tile.classList.add('slot-full');
+                tile.disabled = true;
             } else {
-                availabilityAlert.className = 'availability-alert unavailable';
-                availabilityIcon.className = 'bi bi-exclamation-triangle';
-                availabilityMessage.textContent = data.message || '選択された時間帯は予約できません';
-                submitBtn.disabled = true;
+                tile.classList.add('slot-past');
+                tile.disabled = true;
             }
-        })
-        .catch(error => {
-            availabilityStatus.style.display = 'block';
-            availabilityAlert.className = 'availability-alert error';
-            availabilityIcon.className = 'bi bi-x-circle';
-            availabilityMessage.textContent = '空き状況の確認に失敗しました';
-            submitBtn.disabled = true;
+
+            slotGrid.appendChild(tile);
         });
     }
 
-    reservationDate.addEventListener('change', checkAvailability);
-    startTime.addEventListener('change', checkAvailability);
-    endTime.addEventListener('change', checkAvailability);
+    // === Two-tap slot selection ===
+    function handleSlotClick(index) {
+        if (selectionStart === null || selectionEnd !== null) {
+            // First tap or reset after complete selection
+            selectionStart = index;
+            selectionEnd = null;
+            updateSlotHighlights();
+            showGuide('info', '終了時間をタップしてください');
+            slotSummary.style.display = 'none';
+            submitBtn.disabled = true;
+            clearHiddenInputs();
+            return;
+        }
+
+        // Selecting end time
+        if (index <= selectionStart) {
+            // Tapped before/on start → new start
+            selectionStart = index;
+            selectionEnd = null;
+            updateSlotHighlights();
+            showGuide('info', '終了時間をタップしてください');
+            slotSummary.style.display = 'none';
+            submitBtn.disabled = true;
+            clearHiddenInputs();
+            return;
+        }
+
+        // Validate continuous availability
+        for (var i = selectionStart; i <= index; i++) {
+            if (slotData[i].status !== 'available') {
+                showGuide('warn', '範囲内に予約済みの時間があります。別の時間を選んでください');
+                return;
+            }
+        }
+
+        // Validate duration
+        var slotCount = index - selectionStart + 1;
+        var durationMinutes = slotCount * 30;
+        var minMin = currentMinDuration * 60;
+        var maxMin = currentMaxDuration * 60;
+
+        if (durationMinutes < minMin) {
+            showGuide('warn', '最低' + currentMinDuration + '時間以上を選択してください');
+            return;
+        }
+        if (durationMinutes > maxMin) {
+            showGuide('warn', '最大' + currentMaxDuration + '時間まで選択できます');
+            return;
+        }
+
+        // Valid selection!
+        selectionEnd = index;
+        updateSlotHighlights();
+
+        var startStr = slotData[selectionStart].time;
+        var endStr = addMinutes(slotData[selectionEnd].time, 30);
+        var durationHours = durationMinutes / 60;
+        var price = Math.round(currentHourlyRate * durationHours);
+
+        startTimeInput.value = startStr;
+        endTimeInput.value = endStr;
+
+        slotGuide.style.display = 'none';
+        slotSummary.style.display = '';
+        slotSummary.innerHTML =
+            '<div class="slot-summary-time">' +
+                '<span>' + startStr + '</span>' +
+                '<i class="bi bi-arrow-right"></i>' +
+                '<span>' + (endStr === '00:00' ? '24:00' : endStr) + '</span>' +
+            '</div>' +
+            '<div class="slot-summary-detail">' +
+                durationHours + '時間 / 約 ' + price.toLocaleString() + '円（税込）' +
+            '</div>';
+
+        submitBtn.disabled = false;
+        submitBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // === Update slot highlights ===
+    function updateSlotHighlights() {
+        var tiles = slotGrid.querySelectorAll('.slot-tile');
+        var maxSlots = (currentMaxDuration * 60) / 30;
+
+        tiles.forEach(function(tile, i) {
+            tile.classList.remove('slot-selected', 'slot-range', 'slot-out-of-range');
+
+            if (selectionStart !== null && selectionEnd === null) {
+                // Start only
+                if (i === selectionStart) {
+                    tile.classList.add('slot-selected');
+                } else if (i > selectionStart && slotData[i].status === 'available') {
+                    var dist = i - selectionStart;
+                    if (dist >= maxSlots) {
+                        tile.classList.add('slot-out-of-range');
+                    } else {
+                        var reachable = true;
+                        for (var j = selectionStart + 1; j <= i; j++) {
+                            if (slotData[j].status !== 'available') {
+                                reachable = false;
+                                break;
+                            }
+                        }
+                        if (!reachable) tile.classList.add('slot-out-of-range');
+                    }
+                }
+            } else if (selectionStart !== null && selectionEnd !== null) {
+                // Range selected
+                if (i >= selectionStart && i <= selectionEnd) {
+                    tile.classList.add(
+                        (i === selectionStart || i === selectionEnd) ? 'slot-selected' : 'slot-range'
+                    );
+                }
+            }
+        });
+    }
+
+    // === Helper functions ===
+    function resetTimeSelection() {
+        selectionStart = null;
+        selectionEnd = null;
+        slotData = [];
+        slotGrid.innerHTML = '';
+        slotGuide.style.display = 'none';
+        slotSummary.style.display = 'none';
+        slotError.style.display = 'none';
+        submitBtn.disabled = true;
+        clearHiddenInputs();
+    }
+
+    function clearHiddenInputs() {
+        startTimeInput.value = '';
+        endTimeInput.value = '';
+    }
+
+    function showGuide(type, message) {
+        slotGuide.style.display = '';
+        var icon = type === 'warn' ? 'bi-exclamation-circle' : 'bi-info-circle';
+        slotGuide.innerHTML = '<i class="bi ' + icon + '"></i> ' + message;
+    }
+
+    function formatDate(date) {
+        var y = date.getFullYear();
+        var m = String(date.getMonth() + 1).padStart(2, '0');
+        var d = String(date.getDate()).padStart(2, '0');
+        return y + '-' + m + '-' + d;
+    }
+
+    function addMinutes(timeStr, minutes) {
+        var parts = timeStr.split(':');
+        var totalMin = parseInt(parts[0]) * 60 + parseInt(parts[1]) + minutes;
+        var h = Math.floor(totalMin / 60) % 24;
+        var m = totalMin % 60;
+        return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    }
+
+    // === Date pills scroll buttons ===
+    datePillsLeft.addEventListener('click', function() {
+        datePillsScroll.scrollBy({ left: -200, behavior: 'smooth' });
+    });
+    datePillsRight.addEventListener('click', function() {
+        datePillsScroll.scrollBy({ left: 200, behavior: 'smooth' });
+    });
+
+    // === Form submit validation ===
+    document.getElementById('dateTimeForm').addEventListener('submit', function(e) {
+        if (!reservationDate.value || !startTimeInput.value || !endTimeInput.value) {
+            e.preventDefault();
+        }
+    });
 });
 </script>
 

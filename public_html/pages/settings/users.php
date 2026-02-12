@@ -40,6 +40,29 @@ $allowedRoles = ($currentUser['role'] === 'HQ')
     ? ['STORE' => '店舗スタッフ', 'OWNER' => 'オーナー']
     : ['STORE' => '店舗スタッフ'];
 
+// 店舗一覧をオーナーごとにグループ化（ドロップダウン用）
+$storesWithOwner = dbSelect(
+    "SELECT s.id, s.name, s.owner_id, o.name as owner_name
+     FROM stores s
+     LEFT JOIN owners o ON s.owner_id = o.id
+     WHERE s.id IN ({$inClause['placeholders']}) AND s.deleted_at IS NULL
+     ORDER BY o.name, s.name",
+    $inClause['params']
+);
+$storesByOwner = [];
+foreach ($storesWithOwner as $st) {
+    $oId = (int)($st['owner_id'] ?? 0);
+    if (!isset($storesByOwner[$oId])) {
+        $storesByOwner[$oId] = ['name' => $st['owner_name'] ?? '未割当', 'stores' => []];
+    }
+    $storesByOwner[$oId]['stores'][] = $st;
+}
+// JS用のオーナー→店舗IDマッピング
+$ownerStoreMap = [];
+foreach ($storesByOwner as $oId => $group) {
+    $ownerStoreMap[$oId] = array_column($group['stores'], 'id');
+}
+
 // ユーザー一覧取得（自分の店舗に紐づくユーザー）
 // OWNERはHQユーザーを閲覧不可
 $roleFilter = ($currentUser['role'] !== 'HQ') ? "AND u.role != 'HQ'" : '';
@@ -387,7 +410,7 @@ require __DIR__ . '/../../includes/header.php';
                         <th>氏名</th>
                         <th>メールアドレス</th>
                         <th>権限</th>
-                        <th>デフォルト店舗</th>
+                        <th>所属店舗</th>
                         <th>状態</th>
                         <th>最終ログイン</th>
                         <th></th>
@@ -484,12 +507,22 @@ require __DIR__ . '/../../includes/header.php';
                         <div class="form-text">OWNERロールの場合は必須です</div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">デフォルト店舗</label>
-                        <select name="store_id" class="form-select">
+                        <label class="form-label">所属店舗</label>
+                        <select name="store_id" id="addStoreId" class="form-select">
                             <option value="">指定なし</option>
-                            <?php foreach ($stores as $store): ?>
-                            <option value="<?= $store['id'] ?>"><?= h($store['name']) ?></option>
-                            <?php endforeach; ?>
+                            <?php if (count($storesByOwner) <= 1): ?>
+                                <?php foreach ($stores as $store): ?>
+                                <option value="<?= $store['id'] ?>"><?= h($store['name']) ?></option>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <?php foreach ($storesByOwner as $oId => $group): ?>
+                                <optgroup label="<?= h($group['name']) ?>">
+                                    <?php foreach ($group['stores'] as $st): ?>
+                                    <option value="<?= $st['id'] ?>" data-owner-id="<?= $oId ?>"><?= h($st['name']) ?></option>
+                                    <?php endforeach; ?>
+                                </optgroup>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </select>
                     </div>
                 </div>
@@ -557,12 +590,22 @@ require __DIR__ . '/../../includes/header.php';
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">デフォルト店舗</label>
+                        <label class="form-label">所属店舗</label>
                         <select name="store_id" id="editUserStoreId" class="form-select">
                             <option value="">指定なし</option>
-                            <?php foreach ($stores as $store): ?>
-                            <option value="<?= $store['id'] ?>"><?= h($store['name']) ?></option>
-                            <?php endforeach; ?>
+                            <?php if (count($storesByOwner) <= 1): ?>
+                                <?php foreach ($stores as $store): ?>
+                                <option value="<?= $store['id'] ?>"><?= h($store['name']) ?></option>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <?php foreach ($storesByOwner as $oId => $group): ?>
+                                <optgroup label="<?= h($group['name']) ?>">
+                                    <?php foreach ($group['stores'] as $st): ?>
+                                    <option value="<?= $st['id'] ?>" data-owner-id="<?= $oId ?>"><?= h($st['name']) ?></option>
+                                    <?php endforeach; ?>
+                                </optgroup>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </select>
                     </div>
                 </div>
@@ -583,39 +626,92 @@ require __DIR__ . '/../../includes/header.php';
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // オーナー→店舗IDマッピング（PHPから）
+    var ownerStoreMap = <?= json_encode($ownerStoreMap, JSON_HEX_TAG) ?>;
+
     // ロール選択時のオーナー表示切替関数
-    function toggleOwnerSelect(roleSelect, ownerGroup) {
-        ownerGroup.style.display = roleSelect.value === 'OWNER' ? 'block' : 'none';
+    function toggleOwnerSelect(roleSelect, ownerGroup, storeSelect) {
+        var isOwner = roleSelect.value === 'OWNER';
+        ownerGroup.style.display = isOwner ? 'block' : 'none';
+        // ロール切替時に店舗フィルタをリセット
+        filterStoresByOwner(storeSelect, isOwner ? ownerGroup.querySelector('select').value : '');
     }
 
-    // 追加フォームのロール切替
-    const addUserRole = document.getElementById('addUserRole');
-    const addOwnerGroup = document.getElementById('addOwnerGroup');
+    // 店舗ドロップダウンをオーナーでフィルタ
+    function filterStoresByOwner(storeSelect, ownerId) {
+        var optgroups = storeSelect.querySelectorAll('optgroup');
+        // optgroupがない場合（単一オーナー）はフィルタ不要
+        if (optgroups.length === 0) return;
+
+        if (!ownerId) {
+            // オーナー未選択：全店舗を表示
+            optgroups.forEach(function(og) { og.style.display = ''; });
+            Array.from(storeSelect.querySelectorAll('option[data-owner-id]')).forEach(function(opt) {
+                opt.style.display = '';
+            });
+        } else {
+            var allowedIds = ownerStoreMap[ownerId] || [];
+            optgroups.forEach(function(og) {
+                var hasVisible = false;
+                og.querySelectorAll('option').forEach(function(opt) {
+                    var show = allowedIds.indexOf(parseInt(opt.value)) !== -1;
+                    opt.style.display = show ? '' : 'none';
+                    if (show) hasVisible = true;
+                });
+                og.style.display = hasVisible ? '' : 'none';
+            });
+            // 選択中の値がフィルタ外なら解除
+            var current = parseInt(storeSelect.value);
+            if (current && allowedIds.indexOf(current) === -1) {
+                storeSelect.value = '';
+            }
+        }
+    }
+
+    // 追加フォーム
+    var addUserRole = document.getElementById('addUserRole');
+    var addOwnerGroup = document.getElementById('addOwnerGroup');
+    var addStoreId = document.getElementById('addStoreId');
+    var addOwnerId = document.getElementById('addOwnerId');
+
     addUserRole.addEventListener('change', function() {
-        toggleOwnerSelect(this, addOwnerGroup);
+        toggleOwnerSelect(this, addOwnerGroup, addStoreId);
+    });
+    addOwnerId.addEventListener('change', function() {
+        filterStoresByOwner(addStoreId, this.value);
     });
 
-    // 編集フォームのロール切替
-    const editUserRole = document.getElementById('editUserRole');
-    const editOwnerGroup = document.getElementById('editOwnerGroup');
+    // 編集フォーム
+    var editUserRole = document.getElementById('editUserRole');
+    var editOwnerGroup = document.getElementById('editOwnerGroup');
+    var editStoreId = document.getElementById('editUserStoreId');
+    var editOwnerId = document.getElementById('editUserOwnerId');
+
     editUserRole.addEventListener('change', function() {
-        toggleOwnerSelect(this, editOwnerGroup);
+        toggleOwnerSelect(this, editOwnerGroup, editStoreId);
+    });
+    editOwnerId.addEventListener('change', function() {
+        filterStoresByOwner(editStoreId, this.value);
     });
 
     // 編集モーダル表示時の処理
-    const editModal = document.getElementById('editUserModal');
+    var editModal = document.getElementById('editUserModal');
     editModal.addEventListener('show.bs.modal', function(event) {
-        const button = event.relatedTarget;
-        const isCurrent = button.dataset.isCurrent === '1';
-        const role = button.dataset.role;
+        var button = event.relatedTarget;
+        var isCurrent = button.dataset.isCurrent === '1';
+        var role = button.dataset.role;
+        var ownerId = button.dataset.ownerId || '';
 
         document.getElementById('editUserId').value = button.dataset.id;
         document.getElementById('editUserEmail').value = button.dataset.email;
         document.getElementById('editUserName').value = button.dataset.name;
         document.getElementById('editUserRole').value = role;
-        document.getElementById('editUserOwnerId').value = button.dataset.ownerId || '';
+        editOwnerId.value = ownerId;
         document.getElementById('editUserStatus').value = button.dataset.status;
-        document.getElementById('editUserStoreId').value = button.dataset.storeId;
+
+        // 店舗フィルタを適用してから値をセット
+        filterStoresByOwner(editStoreId, role === 'OWNER' ? ownerId : '');
+        editStoreId.value = button.dataset.storeId;
 
         // 自分自身の場合は権限・状態・削除を無効化
         document.getElementById('editRoleGroup').style.display = isCurrent ? 'none' : 'block';

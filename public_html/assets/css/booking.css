@@ -447,3 +447,349 @@
     opacity: 0;
     pointer-events: none;
 }
+
+/* ===========================
+ * 日付ピル
+ * =========================== */
+.date-pills-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.date-pills-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex: 1;
+}
+
+.date-pills-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+.date-pills {
+    display: flex;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.date-pill {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 12px;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 60px;
+    position: relative;
+}
+
+.date-pill:hover {
+    border-color: #d1d5db;
+    background: #f9fafb;
+}
+
+.date-pill.selected {
+    border-color: var(--booking-primary);
+    background: var(--booking-selected-bg);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.date-pill.today {
+    border-color: var(--booking-accent);
+}
+
+.date-pill.today::before {
+    content: '今日';
+    font-size: 0.6rem;
+    color: var(--booking-accent);
+    font-weight: 600;
+    position: absolute;
+    top: -8px;
+    background: white;
+    padding: 0 4px;
+}
+
+.date-pill-weekday {
+    font-size: 0.75rem;
+    color: #6b7280;
+    font-weight: 500;
+}
+
+.date-pill-weekday.weekend {
+    color: #ef4444;
+}
+
+.date-pill-day {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1f2937;
+    line-height: 1.2;
+}
+
+.date-pill.selected .date-pill-day {
+    color: var(--booking-primary);
+}
+
+.date-pill-month {
+    font-size: 0.625rem;
+    color: #9ca3af;
+}
+
+.date-pills-arrow {
+    flex: 0 0 32px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid #e5e7eb;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #6b7280;
+    transition: all 0.2s ease;
+}
+
+.date-pills-arrow:hover {
+    background: #f3f4f6;
+    color: #374151;
+}
+
+/* ===========================
+ * タイルグリッド
+ * =========================== */
+.slot-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 8px;
+}
+
+.slot-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 4px;
+    border: 2px solid #e5e7eb;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    min-height: 56px;
+}
+
+.slot-tile:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.slot-tile-time {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #374151;
+    line-height: 1.2;
+}
+
+.slot-tile-status {
+    font-size: 0.75rem;
+    font-weight: 500;
+    margin-top: 2px;
+}
+
+/* available */
+.slot-tile.slot-available {
+    border-color: #a7f3d0;
+    background: #f0fdf4;
+}
+
+.slot-tile.slot-available .slot-tile-status {
+    color: #059669;
+}
+
+/* full */
+.slot-tile.slot-full {
+    border-color: #e5e7eb;
+    background: #f3f4f6;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.slot-tile.slot-full .slot-tile-time,
+.slot-tile.slot-full .slot-tile-status {
+    color: #9ca3af;
+}
+
+/* past */
+.slot-tile.slot-past {
+    border-color: #f3f4f6;
+    background: #f9fafb;
+    cursor: not-allowed;
+    opacity: 0.4;
+}
+
+.slot-tile.slot-past .slot-tile-time,
+.slot-tile.slot-past .slot-tile-status {
+    color: #d1d5db;
+}
+
+/* selected (start/end) */
+.slot-tile.slot-selected {
+    border-color: var(--booking-primary);
+    background: var(--booking-primary);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+.slot-tile.slot-selected .slot-tile-time,
+.slot-tile.slot-selected .slot-tile-status {
+    color: white;
+}
+
+/* range (between start and end) */
+.slot-tile.slot-range {
+    border-color: #93c5fd;
+    background: #eff6ff;
+}
+
+.slot-tile.slot-range .slot-tile-time {
+    color: var(--booking-primary);
+}
+
+/* out of range (min/max duration) */
+.slot-tile.slot-out-of-range:not(.slot-full):not(.slot-past) {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+/* ===========================
+ * 凡例・ガイド・サマリー
+ * =========================== */
+.slot-legend {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.slot-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: #6b7280;
+}
+
+.slot-legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+}
+
+.slot-legend-dot.dot-available {
+    background: #a7f3d0;
+    border: 1px solid #059669;
+}
+
+.slot-legend-dot.dot-full {
+    background: #e5e7eb;
+    border: 1px solid #9ca3af;
+}
+
+.slot-legend-dot.dot-selected {
+    background: var(--booking-primary);
+    border: 1px solid var(--booking-primary-hover);
+}
+
+.slot-guide {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: #f0f9ff;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    color: #0369a1;
+}
+
+.slot-summary {
+    margin-top: 16px;
+    padding: 16px;
+    background: #f0fdf4;
+    border: 1px solid #a7f3d0;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.slot-summary-time {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1f2937;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+
+.slot-summary-detail {
+    margin-top: 4px;
+    font-size: 0.875rem;
+    color: #6b7280;
+}
+
+.slot-grid-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 32px;
+    color: #6b7280;
+    font-size: 0.875rem;
+}
+
+.slot-error {
+    text-align: center;
+    padding: 24px;
+    color: #991b1b;
+    background: #fee2e2;
+    border-radius: 8px;
+}
+
+.booking-card-header-sub {
+    float: right;
+    font-size: 0.875rem;
+    font-weight: 400;
+    opacity: 0.9;
+}
+
+/* ===========================
+ * レスポンシブ: 日付ピル・タイル
+ * =========================== */
+@media (max-width: 576px) {
+    .date-pills-arrow {
+        display: none;
+    }
+
+    .slot-grid {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+    }
+
+    .slot-tile {
+        padding: 8px 2px;
+        min-height: 48px;
+    }
+
+    .slot-tile-time {
+        font-size: 0.75rem;
+    }
+
+    .slot-tile-status {
+        font-size: 0.625rem;
+    }
+}
